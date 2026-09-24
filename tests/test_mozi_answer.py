@@ -10,7 +10,10 @@ no reply text raises instead of answering with nothing or with the reasoning.
 extract_answer also raises when a stream sends part of a reply and then an
 error. It had returned the part as a whole answer, so the send exited 0.
 The error it raises now, MoziCutShort, carries the part, so a caller can
-keep it on the record while the send fails.
+keep it on the record while the send fails. The older app's data stream
+reads by the same rule: its 3: error part after 0: text raises MoziCutShort,
+and one with no text raises MoziError with its reason, where the raw stream
+had come back as the answer.
 
 This file is shared byte for byte with the acqai plugin repo's tests/, so
 it imports only the transport pair.
@@ -125,6 +128,28 @@ class CutShort(unittest.TestCase):
             mozilib.extract_answer(raw, CFG)
         self.assertEqual(caught.exception.partial, PART)
         self.assertIn("no reason", str(caught.exception))
+
+    def test_the_older_apps_error_part_after_text_cuts_it_short(self):
+        raw = (b'f:{"messageId":"m1"}\n'
+               b'g:"thinking it through"\n'
+               b'0:"Price it at "\n'
+               b'0:"$4,500 and"\n'
+               b'3:"The model is overloaded."\n')
+        with self.assertRaises(mozilib.MoziCutShort) as caught:
+            mozilib.extract_answer(raw, {})
+        self.assertEqual(caught.exception.partial, PART)
+        self.assertIn(OVERLOADED, str(caught.exception))
+
+    def test_the_older_apps_error_part_with_no_text_names_its_reason(self):
+        raw = (b'f:{"messageId":"m1"}\n'
+               b'g:"thinking it through"\n'
+               b'3:"The model is overloaded."\n')
+        with self.assertRaises(mozilib.MoziError) as caught:
+            mozilib.extract_answer(raw, {})
+        err = caught.exception
+        self.assertNotIsInstance(err, mozilib.MoziCutShort)
+        self.assertIn(OVERLOADED, str(err))
+        self.assertNotIn("thinking", str(err))
 
 
 class OtherShapes(unittest.TestCase):

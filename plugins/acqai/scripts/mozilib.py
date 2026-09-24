@@ -801,12 +801,54 @@ def _typed_answer(events: list[dict]) -> str:
     return answer
 
 
+# One line of an AI SDK data stream, the older app's: a one-character type, a
+# colon, then a JSON value. Type 0 is reply text and type 3 an error.
+_DATA_PART = re.compile(r"^([0-9a-z]):(.+)$")
+
+
+def _data_stream_answer(text: str) -> str | None:
+    """The reply an AI SDK data stream carries, read in stream order, or None
+    when the text holds no text part and no error part. Raises when an error
+    part arrived after some reply text, and when one came with no reply text
+    at all, the rule the portal's typed stream reads by."""
+    parts: list[str] = []
+    seen = False
+    cut = why = ""
+    for line in text.splitlines():
+        m = _DATA_PART.match(line.strip())
+        if not m or m.group(1) not in ("0", "3"):
+            continue
+        try:
+            val, _end = json.JSONDecoder().raw_decode(m.group(2))
+        except ValueError:
+            continue
+        if not isinstance(val, str):
+            continue
+        seen = True
+        if m.group(1) == "0":
+            parts.append(val)
+            continue
+        reason = " ".join(val.split())[:200] or "the error part gave no reason"
+        if "".join(parts).strip():
+            cut = cut or reason
+        else:
+            why = why or reason
+    if not seen:
+        return None
+    answer = "".join(parts).strip()
+    if cut:
+        raise MoziCutShort(cut, answer)
+    if why and not answer:
+        raise MoziError("Mozi's stream carried an error and no reply: " + why)
+    return answer
+
+
 def extract_answer(raw: bytes, cfg: dict) -> str:
     text = raw.decode("utf-8", errors="replace").strip()
-    # Vercel AI SDK data-stream lines: 0:"chunk"  (legacy text parts)
-    ai_parts = re.findall(r'^0:"((?:[^"\\]|\\.)*)"', text, re.M)
-    if ai_parts:
-        return "".join(json.loads(f'"{p}"') for p in ai_parts).strip()
+    # The older app's AI SDK data stream: 0:"…" text parts, 3:"…" errors.
+    answer = _data_stream_answer(text)
+    if answer is not None:
+        return answer
     # SSE or NDJSON: one JSON event per line.
     events: list[dict] = []
     for line in text.splitlines():
