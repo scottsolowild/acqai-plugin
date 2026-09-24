@@ -10,6 +10,9 @@ so expect the shape to move.
 
 ## [0.1.0] - 2026-09-23
 
+### Fixed
+- Install steps use `claude plugin marketplace add` / `claude plugin install`. The `/plugin` slash commands fail in the Claude Code desktop app.
+
 ### Added
 - First release: the `acq` skill and the `/acq` command.
 - `setup`: a private venv with Playwright and its Chromium, and the company to pick on ACQ AI's sign-in list.

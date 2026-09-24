@@ -23,12 +23,23 @@ and no folder at all still works: Claude sends your question on its own.
 
 ## Setup (once, about five minutes)
 
-**1. Install it**, in Claude Code:
+**1. Install it** from a terminal (this is its own GitHub marketplace, not
+Anthropic's plugin catalog):
 
 ```
-/plugin marketplace add scottsolowild/acqai-plugin
-/plugin install acqai@acqai-plugin
+claude plugin marketplace add scottsolowild/acqai-plugin
+claude plugin install acqai@acqai-plugin
 ```
+
+If you belong to more than one company on ACQ AI, pass it on the install:
+
+```
+claude plugin install acqai@acqai-plugin --config mozi_company="Your Company"
+```
+
+In the Claude Code desktop app, `/plugin` in the composer is not available.
+Install from the terminal first. After that, the plugin shows under **+ →
+Plugins**.
 
 **2. Say "set up ACQ AI".** Claude installs the browser it drives (a private
 copy, in `~/.config/acqai`, so nothing on your machine changes) and opens a
