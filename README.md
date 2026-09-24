@@ -5,8 +5,8 @@ ACQ AI, in Claude Code.
 You are in a Claude Code conversation about your business. This plugin lets
 that conversation include ACQ AI. Claude reads the docs you point it at, writes
 the question, shows it to you, sends it to ACQ AI through your own signed-in
-browser once you say yes, reads the answer, pushes back where it is thin, and
-hands you the result with the edits it implies. Your docs are the context, so
+browser once you say yes, reads the answer, asks a follow-up or two with what
+your docs add, and hands you the result with the edits it implies. Your docs are the context, so
 there is nothing to paste and no context document to keep current.
 
 This is its own GitHub marketplace
@@ -77,7 +77,7 @@ Say what you want in plain English:
 - "ask ACQ AI to price this offer" (with the offer doc open or named)
 - "run my landing page past ACQ AI and tell me what it would change"
 - "what would ACQ AI say about this funnel? here are the numbers"
-- "push back on that answer: where is the mechanism?"
+- "ask a follow-up: how does that change at my price?"
 - "sort that reply: what do we adopt, what waits, what do we drop"
 
 Claude writes the question from your docs and shows it before anything is
@@ -97,7 +97,7 @@ and no folder at all still works: Claude sends your question on its own.
 
 - **Writes the question from your docs.** The situation, the numbers, the decision, and the docs that matter, pasted in whole, with a standing ask that ACQ AI use your terms and say what each recommendation rests on.
 - **Sends it through your own browser.** Playwright drives a private Chromium that you signed into once. The session stays on your machine.
-- **Keeps the thread.** A follow-up lands in the same ACQ AI conversation, so "go deeper on point two" works. A new topic starts a new one.
+- **Refines with questions.** Claude reads the answer and asks a follow-up or two in the same ACQ AI conversation, each carrying a number or a result from your docs that ACQ AI did not have yet. Each answer builds on the last, so "go deeper on point two" works too. A new topic starts a new conversation.
 - **Brings the mechanics home.** Claude labels what ACQ AI said and what it added, then sorts the answer: adopt (an edit, drafted in your voice), later, or drop.
 
 ## The rules
