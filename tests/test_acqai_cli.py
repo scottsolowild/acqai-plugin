@@ -359,5 +359,39 @@ class Answers(CliCase):
         self.assertIn("chat 18711427… with no app on record", out)
 
 
+class CutShort(CliCase):
+    """Part of a reply, then an error: the send fails, and the part that
+    came joins the conversation's file, marked where it stopped."""
+
+    def test_the_part_is_filed_with_its_chat_and_the_send_exits_1(self):
+        def ask(message, *, chat_id=None, timeout=120):
+            # The transport saves the chat before it reads the answer, so
+            # the chat holds the question and the part.
+            mozilib.save_chat_id(PORTAL_CHAT)
+            raise mozilib.MoziCutShort("The model is overloaded.",
+                                       "Price it at $4,500 and")
+
+        out, err = io.StringIO(), io.StringIO()
+        # -y opens the send gate in this process's environment, and
+        # patch.dict puts the environment back for the tests after this one.
+        with mock.patch.dict(os.environ), \
+                mock.patch.object(acqai, "ANSWERS", self.answers), \
+                mock.patch.object(mozilib, "CHAT_ID_FILE", self.state / "chat-id"), \
+                mock.patch.object(mozilib, "ask", side_effect=ask), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = acqai.main(["send", "What should I charge?", "--http", "-y"])
+        self.assertEqual(code, 1)
+        self.assertIn("Price it at $4,500 and", out.getvalue())
+        self.assertIn("The model is overloaded.", err.getvalue())
+        filed = sorted(self.answers.glob("*.md"))
+        self.assertEqual(len(filed), 1, filed)
+        kept = filed[0].read_text(encoding="utf-8")
+        self.assertIn(f"answered in chat {PORTAL_CHAT}", kept)
+        reply = kept.split("## ACQ ➡️ Claude", 1)[1]
+        self.assertIn("Price it at $4,500 and", reply)
+        self.assertIn("Cut short here", reply)
+
+
 if __name__ == "__main__":
     unittest.main()

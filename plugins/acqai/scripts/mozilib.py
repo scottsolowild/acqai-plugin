@@ -111,6 +111,23 @@ class MoziChatElsewhere(MoziError):
     no app. The send stops before any request and says how to go on."""
 
 
+class MoziCutShort(MoziError):
+    """The stream sent part of a reply and then an error. The send fails, and
+    the reply text from before the error rides on `partial`, so a caller can
+    keep it on the record."""
+
+    def __init__(self, reason: str, partial: str) -> None:
+        super().__init__("Mozi's stream stopped with an error partway "
+                         f"through the reply: {reason}")
+        self.reason = reason
+        self.partial = partial
+
+    def logged(self) -> str:
+        """The partial reply as a log keeps it, marked where it stopped."""
+        return (f"{self.partial}\n\n*(Cut short here. Mozi's stream sent an "
+                f"error: {self.reason})*")
+
+
 def load_chat_id() -> str | None:
     """The saved Mozi chat as <id>@<host> (chat_ref), if any. Env wins so a
     nested send inside an ask can inherit without racing the file; otherwise
@@ -740,21 +757,48 @@ def _event_text(event: dict) -> str:
     return text_delta if isinstance(text_delta, str) else ""
 
 
+def _error_reason(event: dict) -> str:
+    """The reason an error event gives, on one line, or ""."""
+    for key in ("errorText", "message", "error"):
+        val = event.get(key)
+        if isinstance(val, str) and val.strip():
+            return " ".join(val.split())[:200]
+    return ""
+
+
 def _no_reply(events: list[dict]) -> str:
     """Why a typed stream carried no reply text: its own error, else the
     event types it did carry. Never the reasoning itself."""
     for event in events:
-        if event.get("type") != "error":
-            continue
-        for key in ("errorText", "message", "error"):
-            val = event.get(key)
-            if isinstance(val, str) and val.strip():
-                return ("Mozi's stream carried an error and no reply: "
-                        + " ".join(val.split())[:200])
+        why = _error_reason(event) if event.get("type") == "error" else ""
+        if why:
+            return "Mozi's stream carried an error and no reply: " + why
     kinds = dict.fromkeys(e["type"] for e in events
                           if isinstance(e.get("type"), str))
     return ("Mozi's stream carried no reply text, only these events: "
             + ", ".join(kinds))
+
+
+def _typed_answer(events: list[dict]) -> str:
+    """The reply a typed stream carries, read in stream order the way the
+    portal's reader reads it. Raises when there is no reply text, and when an
+    error event arrived after some of it."""
+    parts: list[str] = []
+    cut = ""
+    for event in events:
+        if event.get("type") == "error" and not cut and "".join(parts).strip():
+            cut = _error_reason(event) or "the error event gave no reason"
+        parts.append(_event_text(event))
+    answer = "".join(parts).strip()
+    if not answer:
+        # Returning "" would let the send exit 0 as a sent ask, and taking
+        # every `delta` would put the reasoning back in the answer.
+        raise MoziError(_no_reply(events))
+    if cut:
+        # Returning the part would let the send exit 0 and file it as the
+        # whole answer. The part rides on the error, so the log keeps it.
+        raise MoziCutShort(cut, answer)
+    return answer
 
 
 def extract_answer(raw: bytes, cfg: dict) -> str:
@@ -779,14 +823,7 @@ def extract_answer(raw: bytes, cfg: dict) -> str:
             events.append(obj)
     if any(isinstance(e.get("type"), str) for e in events):
         # A typed stream, the portal's: the answer is its text events alone.
-        answer = "".join(map(_event_text, events)).strip()
-        if answer:
-            return answer
-        # No reply text. Returning "" would let the send exit 0 as a sent
-        # ask, and taking every `delta` would put the reasoning back in the
-        # answer. So this raises, naming the stream's error or the event
-        # types it carried.
-        raise MoziError(_no_reply(events))
+        return _typed_answer(events)
     # Untyped JSON lines: every delta field, else a dug-out text field.
     deltas: list[str] = []
     chunks: list[str] = []
