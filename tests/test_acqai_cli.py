@@ -358,6 +358,34 @@ class Answers(CliCase):
         self.assertIn("chat 18711427… on the older app", out)
         self.assertIn("chat 18711427… with no app on record", out)
 
+class CutShort(CliCase):
+    """Part of a reply, then an error: the send exits 1 and files the part,
+    marked where it stopped, in the conversation the transport recorded."""
+
+    def test_a_cut_short_send_files_the_part_and_exits_1(self):
+        def ask(message, *, chat_id=None, timeout=120):
+            raise mozilib.MoziCutShort("The model is overloaded.",
+                                       "Price it at $4,500 and")
+
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ), \
+                mock.patch.object(acqai, "ANSWERS", self.answers), \
+                mock.patch.object(mozilib, "ask", side_effect=ask), \
+                mock.patch.object(mozilib, "load_chat_id", return_value=PORTAL_CHAT), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = acqai.main(["send", "What should I charge?", "--http", "-y"])
+        self.assertEqual(code, 1)
+        self.assertIn("Price it at $4,500 and", out.getvalue())
+        self.assertIn("The model is overloaded.", err.getvalue())
+        self.assertIn("partial answer on file", err.getvalue())
+        files = list(self.answers.glob("*.md"))
+        self.assertEqual(len(files), 1, files)
+        kept = files[0].read_text(encoding="utf-8")
+        self.assertIn("Price it at $4,500 and", kept)
+        self.assertIn("Cut short here", kept)
+        self.assertIn("The model is overloaded.", kept)
+        self.assertIn(f"answered in chat {PORTAL_CHAT}", kept)
 
 if __name__ == "__main__":
     unittest.main()

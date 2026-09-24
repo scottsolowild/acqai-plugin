@@ -1,4 +1,4 @@
-"""A portal answer holds the reply text alone.
+"""A portal answer holds the reply text alone, and only a whole one passes.
 
 The portal's chat-stream sends typed events, and its reasoning events carry a
 `delta` the way its text events do. extract_answer kept the `delta` of every
@@ -6,6 +6,11 @@ event, so the first working portal send (2026-09-24 14:49, asking for one
 word) logged a reasoning paragraph with "received" glued to its end. A typed
 stream now reads the way the portal's own reader does, and one that carries
 no reply text raises instead of answering with nothing or with the reasoning.
+
+extract_answer also raises when a stream sends part of a reply and then an
+error. It had returned the part as a whole answer, so the send exited 0.
+The error it raises now, MoziCutShort, carries the part, so a caller can
+keep it on the record while the send fails.
 
 This file is shared byte for byte with the acqai plugin repo's tests/, so
 it imports only the transport pair.
@@ -23,6 +28,8 @@ import mozilib  # noqa: E402
 
 CFG = {"url": "https://portal.acquisition.com/api/sandbar/chat-stream",
        "stream": True}
+PART = "Price it at $4,500 and"
+OVERLOADED = "The model is overloaded."
 REASONING = ("**Navigating tool instructions**\n\nThe ask is one word. I'll "
              "start with a minimal searchBooks query, then I'll reply with "
              '"received."')
@@ -84,10 +91,40 @@ class PortalStream(unittest.TestCase):
 
     def test_an_error_event_gives_its_own_reason(self):
         raw = _sse({"type": "reasoning-delta", "delta": REASONING},
-                   {"type": "error", "errorText": "The model is overloaded."})
+                   {"type": "error", "errorText": OVERLOADED})
         with self.assertRaises(mozilib.MoziError) as caught:
             mozilib.extract_answer(raw, CFG)
-        self.assertIn("The model is overloaded.", str(caught.exception))
+        self.assertIn(OVERLOADED, str(caught.exception))
+        # Reasoning is not reply text, so nothing was cut short.
+        self.assertNotIsInstance(caught.exception, mozilib.MoziCutShort)
+
+
+class CutShort(unittest.TestCase):
+    """Part of a reply, then an error: the send fails and carries the part."""
+
+    def test_an_error_after_reply_text_raises_with_the_part(self):
+        raw = _sse({"type": "reasoning-delta", "delta": REASONING},
+                   {"type": "text-delta", "delta": "Price it at "},
+                   {"type": "text-delta", "delta": "$4,500 and"},
+                   {"type": "error", "errorText": OVERLOADED})
+        with self.assertRaises(mozilib.MoziCutShort) as caught:
+            mozilib.extract_answer(raw, CFG)
+        err = caught.exception
+        self.assertIsInstance(err, mozilib.MoziError)
+        self.assertEqual(err.partial, PART)
+        self.assertIn(OVERLOADED, str(err))
+        self.assertNotIn("Navigating", str(err))
+        kept = err.logged()
+        self.assertTrue(kept.startswith(PART + "\n\n"), kept)
+        self.assertIn("Cut short here", kept)
+        self.assertIn(OVERLOADED, kept)
+
+    def test_an_error_with_no_reason_still_cuts_it_short(self):
+        raw = _sse({"type": "text-delta", "delta": PART}, {"type": "error"})
+        with self.assertRaises(mozilib.MoziCutShort) as caught:
+            mozilib.extract_answer(raw, CFG)
+        self.assertEqual(caught.exception.partial, PART)
+        self.assertIn("no reason", str(caught.exception))
 
 
 class OtherShapes(unittest.TestCase):
