@@ -83,8 +83,10 @@ Say what you want in plain English:
 - "keep Jane Doe out of anything you send"
 
 Claude writes the question from your docs and shows it before anything is
-sent. Answers are kept in `~/.config/acqai/answers/`, one file per question,
-so nothing is lost when the chat scrolls away.
+sent. Each conversation is kept in `~/.config/acqai/answers/` as one file, so
+nothing is lost when the chat scrolls away. The file opens on the question,
+the best answer, and what changed, and each message below it sits under who
+sent it.
 
 ## What you need
 
@@ -170,17 +172,21 @@ python3 plugins/acqai/scripts/acqai.py send --file question.md -y
 python3 plugins/acqai/scripts/acqai.py send "Go deeper on point two."
 python3 plugins/acqai/scripts/acqai.py send "Context first." --paste
 python3 plugins/acqai/scripts/acqai.py answers
-python3 plugins/acqai/scripts/acqai.py send "And the pilot?" --continue 2026-09-23-2209
+python3 plugins/acqai/scripts/acqai.py send "And the pilot?" --continue 2026-09-23-2209 --why "The pilot is priced already."
 python3 plugins/acqai/scripts/acqai.py names add "Jane Doe"
-python3 plugins/acqai/scripts/acqai.py outcome 2026-09-23-2209 --adopt "Lead with the pilot."
+python3 plugins/acqai/scripts/acqai.py outcome 2026-09-23-2209 --answer "- Lead with the pilot." --adopt "Lead with the pilot."
+python3 plugins/acqai/scripts/acqai.py answers --regroup --dry-run
 ```
 
 `send` asks y/N before it sends. `-y` answers it. `--dry-run` shows what would
 go out and sends nothing, and it exits 1 when a line says NOT ready. `--new`
 starts a fresh conversation, and `--continue` goes back to the one an answer on
-file used. `--paste` takes the question from the clipboard, after an optional
-note. `names` lists the private names, and `outcome` reads or records what came
-of an answer: adopt, later, or drop.
+file used. `--why` keeps a follow-up's reason above it in that file. `--paste`
+takes the question from the clipboard, after an optional note. `names` lists
+the private names. `outcome` reads or records the top of an answer's file, the
+best answer and what came of it (adopt, suggest, later, or drop), and
+`answers --regroup` merges the one-file-per-send answers of earlier versions
+into one file per chat.
 
 Config, all optional:
 

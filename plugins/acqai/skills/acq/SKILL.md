@@ -42,14 +42,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" send --file /tmp/acq-question.md -y
    ```
 
-   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation. Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`.
+   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation. Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`. Give each follow-up its reason in one line with `--why "…"`, and the file keeps it above the message.
 
 4. **Report.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
    - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten.
    - **Later.** An idea worth keeping that changes more than today's question.
    - **Drop.** The rest, with one line on why.
 
-   Show the edits. Make them only when asked. Once the person decides, record it on the answer's file, which the send named, so the answer keeps what came of it: `outcome <answer> --adopt "…" --later "…" --drop "…"`, one flag for each line.
+   Show the edits. Make them only when asked. Once the person decides, record it at the top of the answer's file, which the send named, so the file opens as a digest: `outcome <answer> --title "<the question, one line>" --answer "<the best answer, a few bullets>" --adopt "…" --suggest "…" --later "…" --drop "…"`, one flag for each line. `adopt` is a change you made, and `suggest` a change you drafted that waits on their yes.
 
 ## When the send fails
 

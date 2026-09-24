@@ -21,20 +21,27 @@ own docs as the context, one paced question at a time, each one on your yes.
   acqai.py send ... --new             start a fresh conversation
   acqai.py send ... --continue ANSWER go on in the conversation an answer on file
                                       used (its name, a prefix of it, or its path)
+  acqai.py send ... --why "LINE"      a follow-up's reason, kept above it on file
   acqai.py send ... --http            replay MOZI_TOKEN instead of the browser
   acqai.py names                      the names a send will not carry out
   acqai.py names add|remove NAME ...  add or remove one (--dry-run shows the change)
-  acqai.py outcome ANSWER             what came of an answer: adopt, later, drop
-  acqai.py outcome ANSWER --adopt "…" record it (also --later and --drop, each can
-                                      repeat, and --dry-run shows the record)
+  acqai.py outcome ANSWER             what came of an answer: adopt, suggest,
+                                      later, drop, and the best answer
+  acqai.py outcome ANSWER --adopt "…" record it at the top of the file (also
+                                      --suggest, --later, --drop, each can repeat;
+                                      --answer and --title set the digest; and
+                                      --dry-run shows the top it would write)
   acqai.py discover --from-curl FILE  learn the route by hand from a Copy-as-cURL
                                       (- for stdin), when login did not catch it
-  acqai.py answers [N]                the last N answers on file (default 10), each
-                                      with its chat and what came of it
+  acqai.py answers [N]                the last N conversations on file (default
+                                      10), each with its chat and what came of it
+  acqai.py answers --regroup          merge the one-file-per-send answers of
+                                      earlier versions into one file per chat
+                                      (--dry-run says what it would merge)
 
 Everything it keeps lives in ~/.config/acqai (override with ACQAI_STATE_DIR):
 the browser profile with your login, the learned route, the current chat id,
-the venv, private-names.txt, and answers/ with one file per send. It reaches
+the venv, private-names.txt, and answers/ with one file per conversation. It reaches
 ACQ AI and nothing else, and it never sends without your yes: y at the prompt,
 -y on the command, or MOZI_SEND_OK=1 in the environment.
 
@@ -260,31 +267,210 @@ def _consent(yes: bool) -> "int | None":
 
 
 # --- the answers on file ------------------------------------------------------
+# One file per conversation with ACQ AI, read as a digest first: the question in
+# one line, the Answer, and What changed. Then each message under who sent it,
+# its own headings a level down, then the commands that ran and the timeline. A
+# follow-up in the same chat lands in the same file.
+ANSWER_H = "## Answer"
+CHANGED_H = "## What changed"
+TO_ACQ_H = "## Claude ➡️ ACQ"
+FROM_ACQ_H = "## ACQ ➡️ Claude"
+COMMANDS_H = "## Which commands ran"
+TIMELINE_H = "## Timeline"
+_OWN_HEADING = re.compile(
+    r"^(" + "|".join(re.escape(h) for h in (
+        ANSWER_H, CHANGED_H, TO_ACQ_H, FROM_ACQ_H, COMMANDS_H, TIMELINE_H))
+    + r")[ \t]*$", re.M)
+NONE_YET = "_(none yet)_"
+# A follow-up's reason, above its message. A note on the file, not text ACQ saw.
+WHY = "> Why: "
+# What an answer led to: a change made, a change proposed and not made yet, an
+# idea kept for later, and what was turned down.
+KINDS = ("adopt", "suggest", "later", "drop")
+_KINDS = KINDS
+_RECORD = re.compile(r"^- (" + "|".join(KINDS) + r"): (.+)$")
+_ANSWERED = re.compile(r"answered in chat (\S+)")
+_META = re.compile(r"^\*ACQ AI · (\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?: · [^*]*)?\*$")
+# The answer files 0.3 and earlier wrote, one per send.
+_OLD_HEAD = re.compile(r"^# ACQ AI · (\d{4}-\d{2}-\d{2} \d{2}:\d{2})")
+_OLD_CHAT = re.compile(r"^chat: (\S+) · transport: (\S+)", re.M)
+
+
 def _slug(text: str, max_len: int = 40) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s[:max_len].rstrip("-") or "question"
 
 
-def _log_answer(question: str, answer: str, chat_id: "str | None", transport: str) -> pathlib.Path:
-    ANSWERS.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y-%m-%d-%H%M%S")
-    path = ANSWERS / f"{stamp}-{_slug(question.strip().splitlines()[0] if question.strip() else '')}.md"
-    lines = [
-        f"# ACQ AI · {time.strftime('%Y-%m-%d %H:%M')}",
-        "",
-        f"chat: {chat_id or 'new'} · transport: {transport}",
-        "",
-        "## Question",
-        "",
-        question.rstrip(),
-        "",
-        "## Answer",
-        "",
-        answer.rstrip(),
-        "",
-    ]
-    path.write_text("\n".join(lines), encoding="utf-8")
-    return path
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+_HEADING = re.compile(r"^(#{1,6})([ \t]+\S.*)$")
+
+
+def _nest(text: str, floor: int = 3) -> str:
+    """Lower a message's headings so the highest sits at h3, under the h2 that
+    names its sender. Lines inside a code fence stay as they are, and nothing
+    goes past h6."""
+    lines = (text or "").split("\n")
+    levels = []
+    fence = ""
+    for line in lines:
+        m = _FENCE.match(line)
+        if m:
+            tok = m.group(1)
+            if not fence:
+                fence = tok[0] * len(tok)
+            elif line.strip().startswith(fence):
+                fence = ""
+            continue
+        h = None if fence else _HEADING.match(line)
+        if h:
+            levels.append(len(h.group(1)))
+    if not levels or min(levels) >= floor:
+        return text
+    shift = floor - min(levels)
+    out = []
+    fence = ""
+    for line in lines:
+        m = _FENCE.match(line)
+        if m:
+            tok = m.group(1)
+            if not fence:
+                fence = tok[0] * len(tok)
+            elif line.strip().startswith(fence):
+                fence = ""
+            out.append(line)
+            continue
+        h = None if fence else _HEADING.match(line)
+        if h:
+            line = "#" * min(6, len(h.group(1)) + shift) + h.group(2)
+        out.append(line)
+    return "\n".join(out)
+
+
+_THE_QUESTION = re.compile(r"^#{1,6} The question[ \t]*\n+(.+?)(?=^#{1,6} |\Z)",
+                           re.M | re.S)
+_TITLE_NOISE = re.compile(r"\*\*|__|`|^\s*(?:#+|>)\s*", re.M)
+
+
+def _one_line(text: str, limit: int = 120) -> str:
+    """The question in one line: the first question the text puts, read under a
+    'The question' heading when the paste has one."""
+    m = _THE_QUESTION.search(text or "")
+    scope = (m.group(1) if m else (text or ""))[:6000]
+    flat = " ".join(_TITLE_NOISE.sub(" ", scope).split())
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", flat) if s.strip()]
+    pick = next((s for s in sents if s.endswith("?")), sents[0] if sents else "")
+    if len(pick) > limit:
+        pick = pick[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return pick or "A question for ACQ AI"
+
+
+def _blank() -> dict:
+    return {"title": "", "started": "", "chat": "", "answer": "", "records": [],
+            "exchanges": [], "commands": [], "timeline": []}
+
+
+# 0.4.0 kept what came of an answer after this marker, at the end of its file.
+_OLD_OUTCOME_MARK = "<!-- acqai: what came of it -->"
+
+
+def _parse_old(text: str) -> dict:
+    """A per-send file from 0.4.0 or earlier, as one exchange."""
+    parts = _blank()
+    head = _OLD_HEAD.match(text)
+    parts["started"] = head.group(1) if head else ""
+    chat = _OLD_CHAT.search(text)
+    text, _, record = text.partition(_OLD_OUTCOME_MARK)
+    for line in record.splitlines():
+        rec = _RECORD.match(line.strip())
+        if rec:
+            parts["records"].append((rec.group(1), rec.group(2).strip()))
+    rest = text.split("\n## Question\n", 1)[1] if "\n## Question\n" in text else ""
+    q, _, a = rest.partition("\n## Answer\n")
+    parts["exchanges"].append({"why": "", "q": q.strip(), "a": a.strip()})
+    if chat and chat.group(1) != "new":
+        parts["chat"] = chat.group(1)
+        parts["timeline"].append(f"- {parts['started']} answered in chat {chat.group(1)}")
+    return parts
+
+
+def _parse(text: str) -> dict:
+    """An answer file in the digest layout, or in the per-send one before it."""
+    text = (text or "").replace("\r\n", "\n")
+    if _OLD_HEAD.match(text) and "\n## Question\n" in text:
+        return _parse_old(text)
+    parts = _blank()
+    matches = list(_OWN_HEADING.finditer(text))
+    pre = text[:matches[0].start()] if matches else text
+    lines = [line.strip() for line in pre.strip().splitlines() if line.strip()]
+    if lines and lines[0].startswith("# "):
+        parts["title"] = lines[0][2:].strip()
+    for line in lines[1:]:
+        meta = _META.match(line)
+        if meta:
+            parts["started"] = meta.group(1)
+    pending = None
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[m.end():end].strip()
+        heading = m.group(1)
+        if heading == ANSWER_H:
+            parts["answer"] = "" if body == NONE_YET else body
+        elif heading == CHANGED_H:
+            for line in body.splitlines():
+                rec = _RECORD.match(line.strip())
+                if rec:
+                    parts["records"].append((rec.group(1), rec.group(2).strip()))
+        elif heading == TO_ACQ_H:
+            if pending is not None:
+                parts["exchanges"].append(pending)
+            why = ""
+            if body.startswith(WHY):
+                first, _, body = body.partition("\n\n")
+                why = first[len(WHY):].strip()
+            pending = {"why": why, "q": body.strip(), "a": ""}
+        elif heading == FROM_ACQ_H:
+            pending = pending or {"why": "", "q": "", "a": ""}
+            pending["a"] = body
+            parts["exchanges"].append(pending)
+            pending = None
+        elif heading == COMMANDS_H:
+            fence = re.search(r"```[^\n]*\n(.*?)\n```", body, re.S)
+            parts["commands"] = [c for c in (fence.group(1) if fence else body).splitlines()
+                                 if c.strip()]
+        elif heading == TIMELINE_H:
+            parts["timeline"] = [line for line in body.splitlines() if line.strip()]
+    if pending is not None:
+        parts["exchanges"].append(pending)
+    chats = _ANSWERED.findall("\n".join(parts["timeline"]))
+    parts["chat"] = chats[-1] if chats else ""
+    return parts
+
+
+def _render(parts: dict) -> str:
+    exchanges = parts["exchanges"]
+    title = parts["title"] or _one_line(exchanges[0]["q"] if exchanges else "")
+    n = len(exchanges)
+    meta = ["ACQ AI", parts["started"],
+            f"{n} exchange{'' if n == 1 else 's'}" if n else "",
+            f"chat {parts['chat'][:8]}" if parts["chat"] else ""]
+    records = "\n".join(f"- {kind}: {text}" for kind, text in parts["records"])
+    out = [f"# {title}", "", "*" + " · ".join(b for b in meta if b) + "*", "",
+           ANSWER_H, "", _nest(parts["answer"]).strip() or NONE_YET, "",
+           CHANGED_H, "", records or NONE_YET, ""]
+    for ex in exchanges:
+        lead = f"{WHY}{ex['why']}\n\n" if ex["why"] else ""
+        out += [TO_ACQ_H, "", (lead + _nest(ex["q"])).strip(), ""]
+        if ex["a"]:
+            out += [FROM_ACQ_H, "", _nest(ex["a"]).strip(), ""]
+    if parts["commands"]:
+        out += [COMMANDS_H, "", "```", *parts["commands"], "```", ""]
+    if parts["timeline"]:
+        out += [TIMELINE_H, "", *parts["timeline"], ""]
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _files() -> list:
+    return sorted(ANSWERS.glob("*.md")) if ANSWERS.is_dir() else []
 
 
 def _answer_file(token: str) -> pathlib.Path:
@@ -293,7 +479,7 @@ def _answer_file(token: str) -> pathlib.Path:
     if path.is_file():
         return path
     name = path.name
-    files = sorted(ANSWERS.glob("*.md")) if ANSWERS.is_dir() else []
+    files = _files()
     for f in files:
         if f.name in (name, name + ".md"):
             return f
@@ -304,41 +490,124 @@ def _answer_file(token: str) -> pathlib.Path:
                      f"({len(hits)} do). {SELF} answers lists them.")
 
 
-_CHAT_LINE = re.compile(r"^chat: (\S+) · ", re.M)
+def _is_old(path: pathlib.Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(_OLD_HEAD.match(text)) and "\n## Question\n" in text
+
+
+def _conversation_of(chat_id: "str | None") -> "pathlib.Path | None":
+    """The file that holds this chat, in the digest layout, or None."""
+    if not chat_id:
+        return None
+    hits = []
+    for path in _files():
+        try:
+            if f"answered in chat {chat_id}" in path.read_text(encoding="utf-8") \
+                    and not _is_old(path):
+                hits.append(path)
+        except OSError:
+            continue
+    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+
+
+def _file_exchange(message: str, answer: str, chat_id: "str | None",
+                   transport: str, argv: list, *, why: str = "",
+                   new: bool = False, sent_at: "time.struct_time | None" = None,
+                   into: "pathlib.Path | None" = None) -> pathlib.Path:
+    """File one exchange: into the file --continue named, its conversation's
+    file, or a new one. An older per-send file it lands in takes the layout."""
+    ANSWERS.mkdir(parents=True, exist_ok=True)
+    sent_at = sent_at or time.localtime()
+    path = into if into else (None if new else _conversation_of(chat_id))
+    if path:
+        parts = _parse(path.read_text(encoding="utf-8"))
+    else:
+        parts = _blank()
+        parts["started"] = time.strftime("%Y-%m-%d %H:%M", sent_at)
+    parts["exchanges"].append({"why": " ".join((why or "").split()),
+                               "q": message.strip(), "a": answer.strip()})
+    parts["commands"].append("acqai.py " + shlex.join(argv))
+    opened = "" if path else ", a new conversation"
+    parts["timeline"].append(
+        f"- {time.strftime('%Y-%m-%d %H:%M:%S', sent_at)} sent "
+        f"{len(message):,} characters via {transport}{opened}")
+    if chat_id:
+        parts["timeline"].append(
+            f"- {time.strftime('%Y-%m-%d %H:%M:%S')} answered in chat {chat_id}")
+        parts["chat"] = chat_id
+    if not path:
+        stamp = time.strftime("%Y-%m-%d-%H%M%S", sent_at)
+        path = ANSWERS / f"{stamp}-{_slug(_one_line(message))}.md"
+        n = 1
+        while path.exists():
+            n += 1
+            path = ANSWERS / f"{stamp}-{_slug(_one_line(message))}-{n}.md"
+    path.write_text(_render(parts), encoding="utf-8")
+    return path
 
 
 def _chat_of(body: str) -> "str | None":
     """The chat an answer used, as the transport saved it, or None."""
-    m = _CHAT_LINE.search(body)
-    return m.group(1) if m and m.group(1) != "new" else None
-
-
-# What came of an answer, kept at the end of its file. The marker line starts
-# the block, so a heading inside ACQ AI's own answer is never read as it.
-_OUTCOME_MARK = "<!-- acqai: what came of it -->"
-_OUTCOME_HEADING = "## What came of it"
-_KINDS = ("adopt", "later", "drop")
-_OUTCOME_LINE = re.compile(r"^- (adopt|later|drop): (.+)$", re.M)
+    return _parse(body)["chat"] or None
 
 
 def _outcome_of(body: str) -> list:
-    """The (kind, line) records on an answer, oldest first, or []."""
-    if _OUTCOME_MARK not in body:
-        return []
-    return _OUTCOME_LINE.findall(body.split(_OUTCOME_MARK, 1)[1])
+    """The (kind, line) records on an answer's file, or []."""
+    return _parse(body)["records"]
 
 
 def _with_outcome(body: str, items: list) -> str:
-    """The answer with its record set to items. A record already there is
-    replaced rather than stacked, so a re-run writes the same file."""
-    kept = body.split(_OUTCOME_MARK, 1)[0].rstrip("\n")
-    lines = "".join(f"- {kind}: {text}\n" for kind, text in items)
-    return f"{kept}\n\n{_OUTCOME_MARK}\n{_OUTCOME_HEADING}\n\n{lines}"
+    """The file with its record set to items, at the top under What changed.
+    A record already there is replaced rather than stacked."""
+    parts = _parse(body)
+    parts["records"] = list(items)
+    return _render(parts)
 
 
 def _outcome_summary(items: list) -> str:
-    counts = {kind: sum(1 for k, _ in items if k == kind) for kind in _KINDS}
+    counts = {kind: sum(1 for k, _ in items if k == kind) for kind in KINDS}
     return ", ".join(f"{kind} {n}" for kind, n in counts.items() if n)
+
+
+def _title_of(parts: dict) -> str:
+    first = parts["exchanges"][0]["q"] if parts["exchanges"] else ""
+    return parts["title"] or _one_line(first)
+
+
+def _regroup(dry: bool) -> int:
+    """Merge the per-send files of 0.3 and earlier into one file per chat."""
+    old = [p for p in _files() if _is_old(p)]
+    if not old:
+        print("nothing to regroup: every answer file is one conversation already")
+        return 0
+    groups: dict = {}
+    for path in old:
+        parts = _parse(path.read_text(encoding="utf-8"))
+        stamp = path.name[:17]
+        if parts["timeline"] and re.match(r"\d{4}-\d{2}-\d{2}-\d{6}$", stamp):
+            day, clock = stamp[:10], stamp[11:]
+            parts["timeline"] = [
+                f"- {day} {clock[:2]}:{clock[2:4]}:{clock[4:]} answered in chat {parts['chat']}"]
+        groups.setdefault(parts["chat"] or path.name, []).append((path, parts))
+    kept = ANSWERS / "regrouped"
+    for key, members in groups.items():
+        first_path, merged = members[0]
+        for _, parts in members[1:]:
+            merged["exchanges"] += parts["exchanges"]
+            merged["timeline"] += parts["timeline"]
+        name = f"{first_path.name[:17]}-{_slug(_one_line(merged['exchanges'][0]['q']))}.md"
+        print(f"{len(members)} file(s) of chat {key[:8]} -> {name}")
+        if dry:
+            continue
+        kept.mkdir(parents=True, exist_ok=True)
+        for path, _ in members:
+            path.replace(kept / path.name)
+        (ANSWERS / name).write_text(_render(merged), encoding="utf-8")
+    print("dry run: nothing moved" if dry else f"the per-send files are kept in {kept}")
+    return 0
 
 
 # --- private names ------------------------------------------------------------
@@ -483,6 +752,7 @@ def cmd_send(rest: list, argv: list) -> int:
     # --continue names an answer on file. Its chat carries the app that made
     # it, so the transport still stops before posting it to the other app.
     cont = _flag_value(rest, "--continue")
+    why = _flag_value(rest, "--why") or ""
     chat = None
     if cont is not None:
         if new:
@@ -549,12 +819,14 @@ def cmd_send(rest: list, argv: list) -> int:
         if paste:
             child = ["send", "--file", "-",
                      *(["--continue", cont] if cont is not None else []),
+                     *(["--why", why] if why else []),
                      *(["--new"] if new else [])]
         stdin_text = message if paste or _file_arg(rest) == "-" else None
         code = _under_venv(child, stdin_text=stdin_text)
         if code is not None:
             return code
     transport = "HTTP" if http else "browser"
+    sent_at = time.localtime()
     try:
         _say(f"sending via {transport} ({len(message)} characters)…")
         # chat is None unless --continue named one: the saved chat goes on.
@@ -573,7 +845,9 @@ def cmd_send(rest: list, argv: list) -> int:
         _say(str(err))
         return 1
     print(answer)
-    path = _log_answer(message, answer, cid, transport)
+    path = _file_exchange(message, answer, cid, transport, argv, why=why,
+                          new=new, sent_at=sent_at,
+                          into=source if cont is not None else None)
     _say(f"answer on file: {path}")
     return 0
 
@@ -597,32 +871,37 @@ def cmd_discover(rest: list) -> int:
 
 
 def cmd_answers(rest: list) -> int:
+    if "--regroup" in rest:
+        return _regroup(dry="--dry-run" in rest)
     try:
         n = int(rest[0]) if rest else 10
     except ValueError:
-        _say("answers takes a number")
+        _say("answers takes a number, or --regroup")
         return 2
-    files = sorted(ANSWERS.glob("*.md"), reverse=True) if ANSWERS.is_dir() else []
+    files = sorted(_files(), key=lambda p: p.stat().st_mtime, reverse=True)
     if not files:
         print(f"no answers on file yet ({ANSWERS})")
         return 0
     for path in files[:n]:
-        first, body = "", ""
         try:
-            body = path.read_text(encoding="utf-8")
-            m = re.search(r"^## Question\n\n(.+)$", body, re.M)
-            first = (m.group(1).strip() if m else "")[:90]
+            parts = _parse(path.read_text(encoding="utf-8"))
         except OSError:
-            pass
-        print(f"{path.name}  {first}")
-        chat = _chat_of(body)
+            continue
+        print(f"{path.name}  {_title_of(parts)[:90]}")
+        chat = parts["chat"]
         cid, host = mozilib.split_chat(chat)
         where = f"on {mozilib.app_name(host)}" if host else "with no app on record"
+        n_ex = len(parts["exchanges"])
         facts = [f"chat {cid[:8]}… {where}" if chat else "no chat on record"]
-        done = _outcome_summary(_outcome_of(body))
+        done = _outcome_summary(parts["records"])
         if done:
             facts.append(done)
+        facts.append(f"{n_ex} exchange{'' if n_ex == 1 else 's'}")
         print("    " + " · ".join(facts))
+    old = sum(1 for p in files if _is_old(p))
+    if old:
+        print(f"({old} file(s) from before one file per conversation; "
+              "answers --regroup merges them by chat)")
     return 0
 
 
@@ -673,15 +952,18 @@ def cmd_names(rest: list) -> int:
 
 
 def cmd_outcome(rest: list) -> int:
-    """Read or record what came of an answer. A record replaces the one before
-    it, so the answer file holds one, and a re-run writes the same file."""
+    """Read or record the top of an answer's file: what came of it, the best
+    answer, and the title. A record replaces the one before it, so the file
+    holds one, and a re-run writes the same file."""
     dry = "--dry-run" in rest
+    rest = [a for a in rest if a != "--dry-run"]
+    title = _flag_value(rest, "--title")
+    answer = _flag_value(rest, "--answer")
     args, items = [], []
     i = 0
-    rest = [a for a in rest if a != "--dry-run"]
     while i < len(rest):
         flag = rest[i]
-        if flag.startswith("--") and flag[2:] in _KINDS:
+        if flag.startswith("--") and flag[2:] in KINDS:
             if i + 1 >= len(rest) or not rest[i + 1].strip():
                 raise ValueError(f"{flag} needs one line: what was done, or why not")
             text = rest[i + 1].strip()
@@ -693,29 +975,38 @@ def cmd_outcome(rest: list) -> int:
         args.append(flag)
         i += 1
     if len(args) != 1:
-        _say('outcome takes one answer: outcome ANSWER [--adopt "…"] [--later "…"] [--drop "…"]')
+        _say('outcome takes one answer: outcome ANSWER [--answer "…"] [--title "…"] '
+             '[--adopt "…"] [--suggest "…"] [--later "…"] [--drop "…"]')
         return 2
     path = _answer_file(args[0])
     body = path.read_text(encoding="utf-8")
-    if not items:
-        got = _outcome_of(body)
-        if not got:
+    parts = _parse(body)
+    if not items and answer is None and title is None:
+        if not parts["records"] and not parts["answer"]:
             print(f"No record on {path.name} yet.")
             return 0
         print(f"{path.name}:")
-        for kind, text in got:
+        for kind, text in parts["records"]:
             print(f"- {kind}: {text}")
+        if parts["answer"]:
+            print(f"\n{parts['answer']}")
         return 0
-    new = _with_outcome(body, items)
+    if items:
+        parts["records"] = items
+    if answer is not None:
+        parts["answer"] = answer.strip()
+    if title is not None:
+        parts["title"] = " ".join(title.split())
+    new = _render(parts)
     if dry:
-        print(new.split(_OUTCOME_MARK, 1)[1].strip())
+        print(new.split(f"\n{TO_ACQ_H}\n", 1)[0].rstrip())
         print("dry run: nothing written")
         return 0
     if new == body:
         _say(f"{path.name} already holds that record")
         return 0
     path.write_text(new, encoding="utf-8")
-    _say(f"recorded {len(items)} on {path.name}")
+    _say(f"recorded on {path.name}")
     return 0
 
 

@@ -212,8 +212,9 @@ class Continue(CliCase):
         self.assertEqual(code, 0)
         self.assertEqual(seen["chat_id"], PORTAL_CHAT)
         self.assertIn("The answer", out.getvalue())
-        filed = sorted(self.answers.glob("*.md"))[-1]
-        self.assertIn(f"chat: {PORTAL_CHAT}", filed.read_text(encoding="utf-8"))
+        filed = path.read_text(encoding="utf-8")
+        self.assertIn(f"answered in chat {PORTAL_CHAT}", filed)
+        self.assertEqual(filed.count("## ACQ ➡️ Claude"), 2, "the follow-up joins its file")
 
 
 class Paste(CliCase):
@@ -298,7 +299,7 @@ class Outcome(CliCase):
         r = self.run_cli(*args)
         self.assertEqual(r.returncode, 0, r.stderr)
         first = path.read_text(encoding="utf-8")
-        self.assertIn("## What came of it", first)
+        self.assertIn("## What changed", first)
         r = self.run_cli(*args)
         self.assertIn("already holds that record", r.stderr)
         self.assertEqual(path.read_text(encoding="utf-8"), first)
@@ -313,7 +314,7 @@ class Outcome(CliCase):
         self.run_cli("outcome", ANSWER, "--later", "Second thought.")
         body = path.read_text(encoding="utf-8")
         self.assertNotIn("First try.", body)
-        self.assertEqual(body.count("## What came of it"), 1)
+        self.assertEqual(body.count("## What changed"), 1)
 
     def test_a_heading_inside_the_answer_is_not_the_record(self):
         path = self.answer(answer="## What came of it\n\n- adopt: ACQ AI's own list")
