@@ -24,6 +24,11 @@ jobs:
       - uses: actions/checkout@v5
       - name: The scripts compile
         run: python3 -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py
+      # tests/ holds the transport pair's tests, shared byte for byte with the
+      # notes repo, and the script's own. Standard library only, like the rest
+      # of this job: the page is a fake and the transport is never reached.
+      - name: Unit tests
+        run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai-tests" PYTHONPATH=plugins/acqai/scripts python3 -m unittest discover -s tests -p "test_*.py"
       # py_compile only compiles the script, and --help runs the code that
       # builds the command table.
       - name: acqai.py --help exits 0

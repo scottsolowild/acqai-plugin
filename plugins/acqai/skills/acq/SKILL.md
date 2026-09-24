@@ -34,26 +34,26 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
 
 2. **Gather.** Read the docs the person points at, or the folder you are in. Build the question with the situation, the numbers, the decision, and the docs that matter, pasted in whole. Ask ACQ AI to answer in the person's own terms, to say what each recommendation rests on (their docs, its pattern library, or a guess), and to name any contradiction it sees. Ask it too, when a follow-up brings in more of the situation, to build on its last answer and say what the new detail changes.
 
-   What stays home: client names, call transcripts, anything the person calls private, and anything you would hesitate to read aloud to a stranger. When in doubt, ask before you include it.
+   What stays home: client names, call transcripts, anything the person calls private, and anything you would hesitate to read aloud to a stranger. When in doubt, ask before you include it. Names the person wants kept out every time go on a list the script checks, one `names add "Jane Doe"` each. When a question includes one of them, the send stops before it goes out.
 
-3. **Show, then send.** Write the question to a temp file (an argv cannot carry a long paste). Show the person what is about to go out: the question and the list of docs riding with it. Wait for their yes. Then:
+3. **Show, then send.** Write the question to a temp file (an argv cannot carry a long paste). Run the send with `--dry-run` first. It exits 1 when a line says NOT ready, such as a private name or a chat from the other app, so fix that before anything else. Show the person what is about to go out: the question and the list of docs riding with it. Wait for their yes. Then:
 
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" send --file /tmp/acq-question.md -y
    ```
 
-   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation. Pass `--new` when the next question is a different topic.
+   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation. Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`.
 
 4. **Report.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
    - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten.
    - **Later.** An idea worth keeping that changes more than today's question.
    - **Drop.** The rest, with one line on why.
 
-   Show the edits. Make them only when asked.
+   Show the edits. Make them only when asked. Once the person decides, record it on the answer's file, which the send named, so the answer keeps what came of it: `outcome <answer> --adopt "…" --later "…" --drop "…"`, one flag for each line.
 
 ## When the send fails
 
-Stop and say why, with the fix the script named: `login` for a profile that is not signed in, `setup` for a missing Playwright, the login window (or `discover`) for a route never learned, a fresh `MOZI_TOKEN` for an expired cookie on the `--http` path. Then run `probe` and show it. Never answer alone and present it as ACQ AI's. Answering alone is a different thing, and it is labeled as yours.
+Stop and say why, with the fix the script named: `login` for a profile that is not signed in, `setup` for a missing Playwright, the login window (or `discover`) for a route never learned, a fresh `MOZI_TOKEN` for an expired cookie on the `--http` path. A private name comes out of the question, or the person says what to write in its place. A chat from the other app is the person's choice: `--new` starts a fresh conversation, and the login the message names goes back to the old one. Then run `probe` and show it. Never answer alone and present it as ACQ AI's. Answering alone is a different thing, and it is labeled as yours.
 
 ## Guards
 

@@ -79,6 +79,8 @@ Say what you want in plain English:
 - "what would ACQ AI say about this funnel? here are the numbers"
 - "ask a follow-up: how does that change at my price?"
 - "sort that reply: what do we adopt, what waits, what do we drop"
+- "go back to yesterday's pricing conversation and ask about the pilot"
+- "keep Jane Doe out of anything you send"
 
 Claude writes the question from your docs and shows it before anything is
 sent. Answers are kept in `~/.config/acqai/answers/`, one file per question,
@@ -98,7 +100,7 @@ and no folder at all still works: Claude sends your question on its own.
 - **Writes the question from your docs.** The situation, the numbers, the decision, and the docs that matter, pasted in whole, with a standing ask that ACQ AI use your terms and say what each recommendation rests on.
 - **Sends it through your own browser.** Playwright drives a private Chromium that you signed into once. The session stays on your machine.
 - **Refines with questions.** Claude reads the answer and asks a follow-up or two in the same ACQ AI conversation, each carrying a number or a result from your docs that ACQ AI did not have yet. Each answer builds on the last, so "go deeper on point two" works too. A new topic starts a new conversation.
-- **Brings the mechanics home.** Claude labels what ACQ AI said and what it added, then sorts the answer: adopt (an edit, drafted in your voice), later, or drop.
+- **Brings the mechanics home.** Claude labels what ACQ AI said and what it added, then sorts the answer: adopt (an edit, drafted in your voice), later, or drop. What you decide is recorded on the answer's file, so the list of answers shows which ones you acted on.
 
 ## The rules
 
@@ -106,7 +108,7 @@ and no folder at all still works: Claude sends your question on its own.
 - **One question at a time.** The script paces itself.
 - **Your account, your use.** It does what you would do by hand, in your own browser, for yourself.
 - **Chat only.** It never posts to the community.
-- **Private things stay home.** Client names, call transcripts, anything you call private. Claude leaves them out, and you see the question before it goes.
+- **Private things stay home.** Client names, call transcripts, anything you call private. Claude leaves them out, and you see the question before it goes. Names you add to the private list are checked on every send. When a question includes one, the send stops before it goes out.
 
 ## Questions
 
@@ -166,17 +168,25 @@ python3 plugins/acqai/scripts/acqai.py probe
 python3 plugins/acqai/scripts/acqai.py send "What would you change first about this offer?"
 python3 plugins/acqai/scripts/acqai.py send --file question.md -y
 python3 plugins/acqai/scripts/acqai.py send "Go deeper on point two."
+python3 plugins/acqai/scripts/acqai.py send "Context first." --paste
 python3 plugins/acqai/scripts/acqai.py answers
+python3 plugins/acqai/scripts/acqai.py send "And the pilot?" --continue 2026-09-23-2209
+python3 plugins/acqai/scripts/acqai.py names add "Jane Doe"
+python3 plugins/acqai/scripts/acqai.py outcome 2026-09-23-2209 --adopt "Lead with the pilot."
 ```
 
 `send` asks y/N before it sends. `-y` answers it. `--dry-run` shows what would
-go out and sends nothing. `--new` starts a fresh conversation.
+go out and sends nothing, and it exits 1 when a line says NOT ready. `--new`
+starts a fresh conversation, and `--continue` goes back to the one an answer on
+file used. `--paste` takes the question from the clipboard, after an optional
+note. `names` lists the private names, and `outcome` reads or records what came
+of an answer: adopt, later, or drop.
 
 Config, all optional:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `ACQAI_STATE_DIR` | `~/.config/acqai` | The folder that holds the login, the route, the chat id, the venv, and the answers. |
+| `ACQAI_STATE_DIR` | `~/.config/acqai` | The folder that holds the login, the route, the chat id, the private names, the venv, and the answers. |
 | `MOZI_COMPANY` | (saved by `setup --company`) | The company to click on the sign-in list. |
 | `MOZI_BASE` | (learned route, else portal) | Override the app origin. Prefer `login` / `login-legacy`. Re-run login after switching. |
 | `MOZI_MIN_DELAY`, `MOZI_MAX_DELAY` | `12`, `30` | Seconds between sends, a random gap in that range. |
