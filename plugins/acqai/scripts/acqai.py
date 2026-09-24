@@ -251,7 +251,9 @@ def cmd_login(rest: list, *, origin: str | None = None) -> int:
     if company:
         mozilib.save_config(company=company)
     os.environ["MOZI_BASE"] = (origin or mozilib.PORTAL_BASE).rstrip("/")
-    mozilib.clear_chat_id()
+    # The saved conversation stays. It names its app, so login-legacy goes
+    # back to a conversation from the older app, and a send on the other app
+    # stops and says so.
     argv = ["login"] + (["--company", company] if company else [])
     if origin == mozilib.LEGACY_BASE:
         # Re-enter under the venv as login-legacy so the child keeps the base.
@@ -310,6 +312,9 @@ def cmd_probe(rest: list) -> int:
         f"send gate:  MOZI_SEND_OK={'set' if mozilib.send_allowed() else 'not set (the send asks y/N)'}",
         f"answers:    {count} on file in {ANSWERS}",
     ]
+    why = mozilib.chat_mismatch(cid, cfg)
+    if why:
+        rows.insert(6, f"next send:  NOT ready: {why}")
     if session:
         try:
             import mozi_browser
@@ -338,6 +343,9 @@ def cmd_send(rest: list, argv: list) -> int:
     if dry:
         cfg = mozilib.endpoint() or {}
         cid = None if new else mozilib.load_chat_id()
+        why = mozilib.chat_mismatch(cid, cfg)
+        chat = (f"NOT ready: {why}" if why
+                else f"continue {cid[:8]}…" if cid else "new conversation")
         shown = message.strip()
         if len(shown) > 400:
             shown = shown[:399].rstrip() + "…"
@@ -345,7 +353,7 @@ def cmd_send(rest: list, argv: list) -> int:
             "Would send one question to ACQ AI:",
             f"  transport: {'raw HTTP (MOZI_TOKEN)' if http else 'your browser (Playwright)'}",
             f"  to:        {cfg.get('url') or '(route not learned yet)'}",
-            f"  chat:      {'continue ' + cid[:8] + '…' if cid else 'new conversation'}",
+            f"  chat:      {chat}",
             f"  consent:   {'given' if (yes or mozilib.send_allowed()) else 'the live run asks y/N first (-y answers it)'}",
             f"  length:    {len(message)} characters",
             f"  question:  {shown}",

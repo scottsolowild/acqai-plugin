@@ -13,7 +13,8 @@ cookies are domain-scoped).
 
   login            headed browser to sign in once (persists the session
                    in the profile and as decrypted storage-state JSON); the
-                   member's first message there teaches the chat route;
+                   member's first message there teaches the chat route,
+                   again when the route on file is on the other app;
                    email OTP on the sign-in form (Google is skipped when their
                    OAuth client is deleted); clicks MOZI_COMPANY on Clerk's
                    org picker or the portal's workspace picker, or leaves the
@@ -23,8 +24,8 @@ cookies are domain-scoped).
                    Claude; also clicks the company when Clerk lands on /choose
                    or the portal asks which workspace
   send(question)   launch, wait for the chat box, in-page fetch, return the
-                   answer; keeps a chat id so a dialogue can continue in the
-                   same conversation
+                   answer; keeps a chat id, with the app that made it, so a
+                   dialogue can continue in the same conversation
 
 Runs on the member's own machine, where the browser has normal network. The
 setup step (./setup.sh in the notes repo, `setup` in the plugin) installs
@@ -783,7 +784,14 @@ def login(*, company: str | None = None, wait_s: int = 600) -> None:
 
 
 def _route_learned() -> bool:
-    return bool((mozilib.endpoint() or {}).get("url"))
+    """True when the route on file is on the app this login opened. A route
+    on the other app counts as none, so login-legacy after the portal, or
+    login after the older app, asks for one message and learns the route
+    again. Later sends then post, and continue the saved chat, on the app
+    the member signed into."""
+    url = (mozilib.endpoint() or {}).get("url")
+    return bool(url) and (mozilib.app_host(url)
+                          == mozilib.app_host(mozilib.base()))
 
 
 def _learn_route(request) -> None:
@@ -888,8 +896,10 @@ def _refused(status: int, what: str, text: str) -> mozilib.MoziError:
 
 def send(question: str, *, chat_id: str | None = None,
          headless: bool = True, timeout: int = 120) -> tuple[str, str | None]:
-    """Send one question through the logged-in browser, return (answer, chat_id).
-    Reuses the saved conversation (or chat_id) so follow-ups stay in one thread.
+    """Send one question through the logged-in browser, return (answer, chat),
+    the chat as mozilib.chat_ref gives it. Reuses the saved conversation (or
+    chat_id) so follow-ups stay in one thread, and stops before the browser
+    opens when that chat is from another app than the route posts to.
     Waits for the chat box first, picking the company on the portal's
     workspace picker when one is up. On portal sandbar, creates a chat via
     in-page fetch when none is saved."""
@@ -899,7 +909,8 @@ def send(question: str, *, chat_id: str | None = None,
             f"no Mozi endpoint learned yet; send one message in the window "
             f"{mozilib.CMD} login opens, or run: {mozilib.CMD} discover "
             "--from-curl <a Copy-as-cURL of a real send>")
-    cid = chat_id if chat_id is not None else mozilib.load_chat_id()
+    cid = mozilib.chat_for_route(
+        chat_id if chat_id is not None else mozilib.load_chat_id(), cfg)
     created = False
     sync_playwright = _import_playwright()
     print("acqai: opening Mozi in browser…", file=sys.stderr, flush=True)
@@ -952,5 +963,6 @@ def send(question: str, *, chat_id: str | None = None,
     if res["status"] >= 400:
         raise _refused(res["status"], f"chat send ({cfg['url']})", res["text"])
     print("acqai: Mozi answered.", file=sys.stderr, flush=True)
-    mozilib.save_chat_id(used)
-    return mozilib.extract_answer(res["text"].encode("utf-8"), cfg), used
+    chat = mozilib.chat_ref(used, cfg["url"])
+    mozilib.save_chat_id(chat)
+    return mozilib.extract_answer(res["text"].encode("utf-8"), cfg), chat

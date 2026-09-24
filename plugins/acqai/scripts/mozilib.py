@@ -10,8 +10,14 @@ Two apps are supported (one learned route at a time):
 
 Set MOZI_BASE, or run login / login-legacy, to pick which login opens.
 After a route is learned, base() follows that endpoint's host so later
-sends stay on the same app without keeping MOZI_BASE set. Re-run login
-(or login-legacy) after switching so endpoint.json matches that app.
+sends stay on the same app without keeping MOZI_BASE set. A login whose
+app differs from the route on file asks for one message and learns the
+route again, so endpoint.json follows the app you signed into.
+
+A chat belongs to the app that made it, and the portal answers 404 for the
+messages of a chat the older app made. So the saved chat names its app,
+as <id>@<host> (chat_ref), and a send posts it only to a route on that
+host. Anything else stops before the first request (chat_mismatch).
 
 Mozi offers no public API and no MCP (confirmed in the ACQ community). The
 reachable path is each app's own internal HTTP endpoint, called with a
@@ -35,8 +41,9 @@ Secrets, both the member's own browser session, never committed:
                https://ai.acquisition.com)
 The chat route and payload shape, learned by `discover` from a Copy-as-cURL of
 a real send, land in endpoint.json under STATE_DIR (review/mozi/ here,
-gitignored; the plugin's own folder elsewhere). No secret is ever
-written there; the cookie stays in the environment.
+gitignored; the plugin's own folder elsewhere). The saved chat sits beside
+it in chat-id. No secret is ever written there; the cookie stays in the
+environment.
 """
 from __future__ import annotations
 
@@ -49,6 +56,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -98,10 +106,17 @@ class MoziConsent(MoziError):
     """A send was attempted without the per-run MOZI_SEND_OK consent flag."""
 
 
+class MoziChatElsewhere(MoziError):
+    """The saved chat is from another app than the route posts to, or names
+    no app. The send stops before any request and says how to go on."""
+
+
 def load_chat_id() -> str | None:
-    """The active Mozi conversation id, if any. Env wins so a nested send
-    inside an ask can inherit without racing the file; otherwise the file
-    under STATE_DIR carries the thread across separate runs."""
+    """The saved Mozi chat as <id>@<host> (chat_ref), if any. Env wins so a
+    nested send inside an ask can inherit without racing the file; otherwise
+    the file under STATE_DIR carries the thread across separate runs. An id
+    saved before chats named their app comes back bare, and a send stops on
+    it rather than guess (chat_mismatch)."""
     env = os.environ.get(CHAT_ID_ENV, "").strip()
     if env:
         return env
@@ -114,7 +129,8 @@ def load_chat_id() -> str | None:
 
 
 def save_chat_id(chat_id: str | None) -> None:
-    """Remember the conversation so the next send continues it."""
+    """Remember the conversation so the next send continues it. The
+    transport saves what chat_ref gives, so the chat carries its app."""
     cid = (chat_id or "").strip()
     if not cid:
         return
@@ -134,6 +150,104 @@ def clear_chat_id() -> None:
             CHAT_ID_FILE.unlink()
     except OSError as err:
         print(f"acqai: chat-id clear skipped ({err})", file=sys.stderr, flush=True)
+
+
+# --- which app a chat belongs to ----------------------------------------------
+def app_host(url: str | None) -> str | None:
+    """The host an app answers on, lower case, from a URL, an origin, or a
+    bare host. None when there is no host to read."""
+    text = (url or "").strip()
+    if not text:
+        return None
+    if "://" not in text:
+        text = "https://" + text
+    try:
+        return urllib.parse.urlsplit(text).hostname or None
+    except ValueError:
+        return None
+
+
+def chat_ref(chat_id: str | None, url: str | None) -> str | None:
+    """A chat as the transport saves and logs it: <id>@<host>, where host is
+    the app that made it (the route the send posted to). A bare id when the
+    host cannot be read, and None for no id."""
+    cid = (chat_id or "").strip()
+    if not cid:
+        return None
+    host = app_host(url)
+    return f"{cid}@{host}" if host else cid
+
+
+def split_chat(saved: str | None) -> tuple[str, str | None]:
+    """A saved chat as (the id its app knows, that app's host). The host is
+    None for an id that names no app: one saved before chats named their
+    app, or a bare MOZI_CHAT_ID."""
+    text = (saved or "").strip()
+    cid, at, host = text.rpartition("@")
+    if not at or not cid:
+        return text, None
+    return cid, app_host(host)
+
+
+def app_name(host: str | None) -> str:
+    """How a message names an app: the portal, the older app, or its host."""
+    if host and host == app_host(PORTAL_BASE):
+        return "the portal"
+    if host and host == app_host(LEGACY_BASE):
+        return "the older app"
+    return host or "no app"
+
+
+def _login_for(host: str | None) -> str:
+    """The command that signs into the app on this host and learns its route."""
+    if host == app_host(LEGACY_BASE):
+        return f"{CMD} login-legacy"
+    if host == app_host(PORTAL_BASE):
+        return f"{CMD} login"
+    return f"MOZI_BASE=https://{host} {CMD} login"
+
+
+def chat_mismatch(saved: str | None, cfg: dict | None = None) -> str:
+    """Why a send must not post this saved chat to the learned route, or ""
+    when it may. Empty with no chat, and with no route to compare against,
+    since a send stops on the missing route first.
+
+    The stop names both ways on, because the choice is the member's: a fresh
+    thread on the route's app, or a login that moves the route back to the
+    app that holds the chat. Nothing here drops the chat on its own."""
+    if not (saved or "").strip():
+        return ""
+    cfg = cfg if cfg is not None else (endpoint() or {})
+    route = app_host(cfg.get("url"))
+    if not route:
+        return ""
+    cid, host = split_chat(saved)
+    if host == route:
+        return ""
+    short = cid[:8] + "…"
+    fresh = f"--new starts a fresh thread on {app_name(route)}"
+    if not host:
+        older, portal = app_host(LEGACY_BASE), app_host(PORTAL_BASE)
+        return (f"Mozi chat {short} names no app, so nothing goes to Mozi. A "
+                "chat continues only on the app that made it, and a saved "
+                f"chat names that app after an @, as in <id>@{older} for the "
+                f"older app or <id>@{portal} for the portal. {fresh}, where "
+                "the route posts.")
+    return (f"Mozi chat {short} is from {app_name(host)} ({host}), and the "
+            f"route posts to {app_name(route)} ({route}). A chat continues "
+            f"only on the app that made it, so nothing goes to Mozi. {fresh}. "
+            f"{_login_for(host)} continues this chat on {app_name(host)}.")
+
+
+def chat_for_route(saved: str | None, cfg: dict | None = None) -> str | None:
+    """The id a send posts on the learned route, or None to start a new chat.
+
+    Raises MoziChatElsewhere rather than post a chat the route's app did not
+    make, and rather than trade it for a new thread without saying so."""
+    why = chat_mismatch(saved, cfg)
+    if why:
+        raise MoziChatElsewhere(why)
+    return split_chat(saved)[0] or None
 
 
 def config() -> dict:
@@ -608,15 +722,49 @@ def save_endpoint(cfg: dict) -> Path:
 
 
 # --- response parsing: JSON, SSE, NDJSON, or Vercel AI SDK data stream --------
+_TEXT_DELTA_TYPES = ("text-delta", "response.output_text.delta")
+
+
+def _event_text(event: dict) -> str:
+    """The reply text one typed stream event carries, or "". These are the
+    three shapes the portal's own reader (its client bundle) takes text
+    from, so a reasoning event yields nothing even when it has a `delta`."""
+    kind = event.get("type")
+    delta = event.get("delta")
+    if kind in _TEXT_DELTA_TYPES and isinstance(delta, str):
+        return delta
+    text = event.get("text")
+    if kind == "text" and isinstance(text, str):
+        return text
+    text_delta = event.get("textDelta")
+    return text_delta if isinstance(text_delta, str) else ""
+
+
+def _no_reply(events: list[dict]) -> str:
+    """Why a typed stream carried no reply text: its own error, else the
+    event types it did carry. Never the reasoning itself."""
+    for event in events:
+        if event.get("type") != "error":
+            continue
+        for key in ("errorText", "message", "error"):
+            val = event.get(key)
+            if isinstance(val, str) and val.strip():
+                return ("Mozi's stream carried an error and no reply: "
+                        + " ".join(val.split())[:200])
+    kinds = dict.fromkeys(e["type"] for e in events
+                          if isinstance(e.get("type"), str))
+    return ("Mozi's stream carried no reply text, only these events: "
+            + ", ".join(kinds))
+
+
 def extract_answer(raw: bytes, cfg: dict) -> str:
     text = raw.decode("utf-8", errors="replace").strip()
     # Vercel AI SDK data-stream lines: 0:"chunk"  (legacy text parts)
     ai_parts = re.findall(r'^0:"((?:[^"\\]|\\.)*)"', text, re.M)
     if ai_parts:
         return "".join(json.loads(f'"{p}"') for p in ai_parts).strip()
-    # Portal sandbar / SSE: accumulate delta fields from JSON lines.
-    deltas: list[str] = []
-    chunks: list[str] = []
+    # SSE or NDJSON: one JSON event per line.
+    events: list[dict] = []
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("data:"):
@@ -627,8 +775,22 @@ def extract_answer(raw: bytes, cfg: dict) -> str:
             obj = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(obj, dict):
-            continue
+        if isinstance(obj, dict):
+            events.append(obj)
+    if any(isinstance(e.get("type"), str) for e in events):
+        # A typed stream, the portal's: the answer is its text events alone.
+        answer = "".join(map(_event_text, events)).strip()
+        if answer:
+            return answer
+        # No reply text. Returning "" would let the send exit 0 as a sent
+        # ask, and taking every `delta` would put the reasoning back in the
+        # answer. So this raises, naming the stream's error or the event
+        # types it carried.
+        raise MoziError(_no_reply(events))
+    # Untyped JSON lines: every delta field, else a dug-out text field.
+    deltas: list[str] = []
+    chunks: list[str] = []
+    for obj in events:
         d = obj.get("delta")
         if isinstance(d, str) and d:
             deltas.append(d)
@@ -669,11 +831,12 @@ def _dig_text(obj: object) -> str:
 
 def ask(question: str, *, chat_id: str | None = None,
         timeout: int = 120) -> tuple[str, str | None]:
-    """Send one question to Mozi and return (answer, chat_id). Reuses the
-    saved conversation unless chat_id is passed (or cleared via clear_chat_id /
-    --new). Portal sandbar creates a chat first when none is saved. Refuses
-    without the per-run consent flag or a discovered endpoint, and never
-    guesses a route."""
+    """Send one question to Mozi and return (answer, chat), the chat as
+    chat_ref gives it. Reuses the saved conversation unless chat_id is passed
+    (a chat as this returns it, or "" for a new one) or cleared via
+    clear_chat_id / --new. Portal sandbar creates a chat first when none is
+    saved. Refuses without the per-run consent flag or a discovered endpoint,
+    never guesses a route, and never posts a chat from another app."""
     if not send_allowed():
         raise MoziConsent(
             "a Mozi send writes to your paid account through an undocumented "
@@ -690,7 +853,8 @@ def ask(question: str, *, chat_id: str | None = None,
             f"the captured __session looks expired ({exp}s left); Clerk tokens "
             "live ~60s, so grab a fresh cookie right before the ask (or use the "
             "browser transport, which never races the token)")
-    cid = chat_id if chat_id is not None else load_chat_id()
+    cid = chat_for_route(chat_id if chat_id is not None else load_chat_id(),
+                         cfg)
     created = False
     if not cid and is_sandbar(cfg):
         print("acqai: creating portal chat…", file=sys.stderr, flush=True)
@@ -712,5 +876,6 @@ def ask(question: str, *, chat_id: str | None = None,
                             body=json.dumps(payload).encode("utf-8"),
                             timeout=timeout, referer=referer)
     print("acqai: Mozi answered.", file=sys.stderr, flush=True)
-    save_chat_id(used)
-    return extract_answer(raw, cfg), used
+    chat = chat_ref(used, cfg["url"])
+    save_chat_id(chat)
+    return extract_answer(raw, cfg), chat
