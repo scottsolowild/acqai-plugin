@@ -39,6 +39,19 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 3
+      # Like setup, build the venv from the python3 that runs the script. Its
+      # bin/python links back to that interpreter, so both resolve to one
+      # file, and the browser commands must still hand off. A bare playwright
+      # package in the venv tells the two apart: only a probe running inside
+      # the venv says "installed here".
+      - name: A browser command hands off to the venv setup made
+        run: |
+          state="$RUNNER_TEMP/acqai-venv"
+          python3 -m venv --without-pip "$state/venv"
+          site=$("$state/venv/bin/python" -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+          mkdir -p "$site/playwright"
+          touch "$site/playwright/__init__.py"
+          ACQAI_STATE_DIR="$state" python3 plugins/acqai/scripts/acqai.py probe --session | grep -q "^playwright: installed here"
       - name: Manifests parse as JSON
         run: |
           for f in .claude-plugin/marketplace.json plugins/acqai/.claude-plugin/plugin.json; do
