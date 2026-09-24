@@ -841,6 +841,18 @@ def cmd_send(rest: list, argv: list) -> int:
     except mozilib.MoziBlocked as err:
         _say(f"stopped ({err}).")
         return 1
+    except mozilib.MoziCutShort as err:
+        # Part of a reply, then an error: the send fails, and the part that
+        # came joins the conversation's file, marked where it stopped. The
+        # transport saved the chat before it read the answer.
+        print(err.partial)
+        path = _file_exchange(message, err.logged(), mozilib.load_chat_id(),
+                              transport, argv, why=why, new=new,
+                              sent_at=sent_at,
+                              into=source if cont is not None else None)
+        _say(str(err))
+        _say(f"partial answer on file: {path}")
+        return 1
     except mozilib.MoziError as err:
         _say(str(err))
         return 1
