@@ -185,8 +185,9 @@ Config, all optional:
 ## Changelog
 
 Version history and the versioning contract are in [CHANGELOG.md](CHANGELOG.md).
-Released versions are git tags (`v0.2.2`, …). After a version bump lands on
-`main`, tag it with `./release.sh --yes` and push the tag.
+Released versions are git tags `acqai--vX.Y.Z` (Claude) and `vX.Y.Z`. A version
+bump on `main` is tagged and published as a GitHub Release automatically.
+`./release.sh --yes --push` does the same by hand.
 
 ## License
 
