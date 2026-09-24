@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "acqai",
   "displayName": "ACQ AI in Claude Code",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Ask ACQ AI (Mozi) from Claude Code with your own docs as the context: Claude writes the question, sends it through your own signed-in browser on your yes, refines the answer with follow-up questions, and brings the mechanics home with the edits they imply.",
   "author": {
     "name": "Scott Solo",

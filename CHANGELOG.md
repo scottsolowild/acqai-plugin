@@ -18,6 +18,16 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. By hand:
 `./release.sh --yes --push`.
 
+## [0.3.1] - 2026-09-24
+
+### Changed
+- The question asks ACQ AI, when a follow-up brings in more of the situation, to build on its last answer and say what the new detail changes.
+
+### Fixed
+- An answer from the portal carries only the reply. The portal's stream tags its reasoning the way it tags the reply, and a paragraph of reasoning came back glued to the front of the answer.
+- A saved conversation goes only to the app that started it. A chat from the older app was sent to the portal, which has never seen it, and the send failed. Now a send on the other app stops before it goes out, and it says that `--new` starts a fresh conversation there.
+- `login`'s sign-in loop waits with `page.wait_for_timeout` too, so the route listener runs during its pauses.
+
 ## [0.3.0] - 2026-09-24
 
 ### Changed
