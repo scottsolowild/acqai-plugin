@@ -5,8 +5,10 @@ own docs as the context, one paced question at a time, each one on your yes.
   acqai.py setup [--company NAME]     install Playwright and its Chromium into a
                                       private venv, and save the company to pick
                                       on ACQ AI's sign-in list
-  acqai.py login [--company NAME]     open a browser and sign into ACQ AI once;
-                                      one message sent there teaches the route
+  acqai.py login [--company NAME]     open a browser and sign into ACQ AI once
+                                      (portal.acquisition.com/advisor); one
+                                      message sent there teaches the route
+  acqai.py login-legacy [--company N] same, for the older ai.acquisition.com/chat
   acqai.py probe [--session]          what is set up: venv, route, chat, consent
                                       (--session also opens the profile headless
                                       and says whether it is still signed in)
@@ -237,11 +239,16 @@ def cmd_setup(rest: list) -> int:
     return 0
 
 
-def cmd_login(rest: list) -> int:
+def cmd_login(rest: list, *, origin: str | None = None) -> int:
     company = _flag_value(rest, "--company")
     if company:
         mozilib.save_config(company=company)
+    os.environ["MOZI_BASE"] = (origin or mozilib.PORTAL_BASE).rstrip("/")
+    mozilib.clear_chat_id()
     argv = ["login"] + (["--company", company] if company else [])
+    if origin == mozilib.LEGACY_BASE:
+        # Re-enter under the venv as login-legacy so the child keeps the base.
+        argv = ["login-legacy"] + argv[1:]
     code = _under_venv(argv)
     if code is not None:
         return code
@@ -256,6 +263,10 @@ def cmd_login(rest: list) -> int:
         _say("ACQAI_LOGIN_WAIT must be a number of seconds")
         return 2
     return 0
+
+
+def cmd_login_legacy(rest: list) -> int:
+    return cmd_login(rest, origin=mozilib.LEGACY_BASE)
 
 
 def cmd_probe(rest: list) -> int:
@@ -416,6 +427,8 @@ def main(argv: list) -> int:
             return cmd_setup(rest)
         if mode == "login":
             return cmd_login(rest)
+        if mode == "login-legacy":
+            return cmd_login_legacy(rest)
         if mode == "probe":
             return cmd_probe(rest)
         if mode == "send":

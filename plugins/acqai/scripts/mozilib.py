@@ -8,8 +8,10 @@ Two apps are supported (one learned route at a time):
   Legacy            https://ai.acquisition.com      UI /chat
                     Clerk __session (~60s); POST /api/chat (AI SDK body)
 
-Set MOZI_BASE to pick which login opens. Re-run login (and send one message,
-or discover --from-curl) after switching so endpoint.json matches that app.
+Set MOZI_BASE, or run login / login-legacy, to pick which login opens.
+After a route is learned, base() follows that endpoint's host so later
+sends stay on the same app without keeping MOZI_BASE set. Re-run login
+(or login-legacy) after switching so endpoint.json matches that app.
 
 Mozi offers no public API and no MCP (confirmed in the ACQ community). The
 reachable path is each app's own internal HTTP endpoint, called with a
@@ -162,12 +164,29 @@ def cookie_header() -> str:
     return os.environ.get("MOZI_TOKEN", "").strip()
 
 
+def origin_from_endpoint(cfg: dict | None = None) -> str | None:
+    """App origin learned from endpoint.json's chat URL, or None."""
+    cfg = cfg if cfg is not None else endpoint()
+    url = (cfg or {}).get("url") if isinstance(cfg, dict) else None
+    if not isinstance(url, str) or not url.strip():
+        return None
+    m = re.match(r"(https?://[^/\s]+)", url.strip())
+    return m.group(1).rstrip("/") if m else None
+
+
 def base() -> str:
-    return (os.environ.get("MOZI_BASE", "").strip() or DEFAULT_BASE).rstrip("/")
+    """App origin: MOZI_BASE, else the learned endpoint's host, else portal."""
+    env = os.environ.get("MOZI_BASE", "").strip()
+    if env:
+        return env.rstrip("/")
+    learned = origin_from_endpoint()
+    if learned:
+        return learned
+    return DEFAULT_BASE
 
 
 def is_portal(origin: str | None = None) -> bool:
-    """True when the origin (or MOZI_BASE) is the ACQ portal, not legacy AI."""
+    """True when the origin (or base()) is the ACQ portal, not legacy AI."""
     host = (origin or base()).lower()
     return "portal.acquisition.com" in host
 

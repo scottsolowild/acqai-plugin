@@ -8,10 +8,15 @@ changed in a breaking way, a **minor** bump adds capability, and a **patch**
 fixes without touching the contract. Pre-1.0, the contract is not frozen yet,
 so expect the shape to move.
 
+## [0.2.1] - 2026-09-24
+
+### Added
+- `login-legacy`: sign into the older ai.acquisition.com/chat app. `login` stays on portal. After a route is learned, sends follow that endpoint's host without keeping `MOZI_BASE` set.
+
 ## [0.2.0] - 2026-09-24
 
 ### Changed
-- Default app is portal.acquisition.com/advisor (Aegis; sandbar `chat` then `chat-stream`). Set `MOZI_BASE=https://ai.acquisition.com` before `login` to keep the older /chat app. Re-run `login` after switching so the learned route matches.
+- Default app is portal.acquisition.com/advisor (Aegis; sandbar `chat` then `chat-stream`). Use `login-legacy` for the older /chat app. Re-run login after switching so the learned route matches.
 
 ### Added
 - Dual transport: portal and legacy in the same script, picked by `MOZI_BASE` and the shape of the learned route.

@@ -148,10 +148,10 @@ is what carries the answer), Copy → Copy as cURL, save it to a file, and run
 `acqai.py discover --from-curl that-file`. The cookie in it is read and thrown
 away. Only the route is kept.
 
-**I still use the older ai.acquisition.com app.** Set
-`MOZI_BASE=https://ai.acquisition.com` before `login`, then send one message
-in that window so the learned route matches. Re-run `login` whenever you
-switch apps.
+**I still use the older ai.acquisition.com app.** Run `acqai.py login-legacy`
+(or `./acqai.sh login-legacy` in the notes repo). Send one message in that
+window so the learned route matches. Later sends follow that route's host.
+`login` alone returns you to portal.
 
 ## Run it by hand (optional)
 
@@ -177,7 +177,7 @@ Config, all optional:
 | --- | --- | --- |
 | `ACQAI_STATE_DIR` | `~/.config/acqai` | The folder that holds the login, the route, the chat id, the venv, and the answers. |
 | `MOZI_COMPANY` | (saved by `setup --company`) | The company to click on the sign-in list. |
-| `MOZI_BASE` | `https://portal.acquisition.com` | App origin (portal /advisor). Legacy: `https://ai.acquisition.com` (/chat). Re-run `login` after switching. |
+| `MOZI_BASE` | (learned route, else portal) | Override the app origin. Prefer `login` / `login-legacy`. Re-run login after switching. |
 | `MOZI_MIN_DELAY`, `MOZI_MAX_DELAY` | `12`, `30` | Seconds between sends, a random gap in that range. |
 | `MOZI_SEND_OK` | (unset) | `1` gives the yes for the whole shell. `-y` gives it for one send, which is the better habit. |
 | `MOZI_TOKEN` | (unset) | The `--http` path only: the whole Cookie header from a signed-in request. Prefer the browser path; a captured legacy Clerk cookie dies in about a minute. |
