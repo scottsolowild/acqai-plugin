@@ -1,0 +1,59 @@
+name: checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel a superseded run when new commits land, so queues don't pile up.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      # python3 ships on ubuntu-latest and every check below uses only the
+      # standard library, so checkout is the one setup step. Playwright is
+      # not installed here: the browser path is proved on a member's own
+      # machine, and every command below runs without it.
+      - uses: actions/checkout@v5
+      - name: The scripts compile
+        run: python3 -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py
+      # py_compile only compiles the script, and --help runs the code that
+      # builds the command table.
+      - name: acqai.py --help exits 0
+        run: python3 plugins/acqai/scripts/acqai.py --help
+      - name: A dry run sends nothing and needs no yes
+        run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai" python3 plugins/acqai/scripts/acqai.py send "hello" --dry-run | grep -q "nothing sent"
+      # No yes on the command, no terminal to ask at: the send stops with
+      # exit 3 before it touches the transport.
+      - name: A send with no yes and no terminal stops before the transport
+        run: |
+          set +e
+          ACQAI_STATE_DIR="$RUNNER_TEMP/acqai" python3 plugins/acqai/scripts/acqai.py send "hello" </dev/null
+          code=$?
+          set -e
+          test "$code" -eq 3
+      - name: Manifests parse as JSON
+        run: |
+          for f in .claude-plugin/marketplace.json plugins/acqai/.claude-plugin/plugin.json; do
+            python3 -m json.tool "$f" > /dev/null || { echo "$f does not parse as JSON" >&2; exit 1; }
+          done
+      # The version is typed by hand into two files at each release.
+      - name: plugin.json version matches CHANGELOG.md
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+          with open("plugins/acqai/.claude-plugin/plugin.json") as f:
+              version = json.load(f).get("version")
+          with open("CHANGELOG.md") as f:
+              heading = re.search(r"^## \[(\d+\.\d+\.\d+[^\]]*)\]", f.read(), re.M)
+          newest = heading.group(1) if heading else None
+          if version != newest:
+              sys.exit(f"plugin.json version is {version}, and the first ## [x.y.z] heading in CHANGELOG.md is {newest}. Bump both in the same commit.")
+          print(f"plugin.json and CHANGELOG.md both say {version}.")
+          PY

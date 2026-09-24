@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "acqai",
+  "displayName": "ACQ AI in Claude Code",
+  "version": "0.1.0",
+  "description": "Ask ACQ AI (Mozi) from Claude Code with your own docs as the context: Claude writes the question, sends it through your own signed-in browser on your yes, pushes back on the answer, and brings the mechanics home with the edits they imply.",
+  "author": {
+    "name": "Scott Solo",
+    "url": "https://github.com/scottsolowild"
+  },
+  "homepage": "https://github.com/scottsolowild/acqai-plugin",
+  "repository": "https://github.com/scottsolowild/acqai-plugin",
+  "license": "MIT",
+  "keywords": [
+    "acq",
+    "acquisition.com",
+    "mozi",
+    "offers",
+    "workflow"
+  ],
+  "userConfig": {
+    "mozi_company": {
+      "type": "string",
+      "title": "Your company on ACQ AI",
+      "description": "The company name ACQ AI shows on its sign-in list, when you belong to more than one. The plugin reads it as CLAUDE_PLUGIN_OPTION_MOZI_COMPANY. Leave it blank to click it yourself the first time, or set it later with: acqai.py setup --company \"Your Company\".",
+      "sensitive": false,
+      "required": false
+    }
+  }
+}

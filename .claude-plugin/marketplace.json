@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "acqai-plugin",
+  "owner": {
+    "name": "Scott Solo",
+    "url": "https://github.com/scottsolowild"
+  },
+  "description": "ACQ AI in Claude Code: ask it with your own docs as the context.",
+  "plugins": [
+    {
+      "name": "acqai",
+      "source": "./plugins/acqai",
+      "description": "Ask ACQ AI from Claude Code, with your own docs as the context.",
+      "category": "productivity"
+    }
+  ]
+}

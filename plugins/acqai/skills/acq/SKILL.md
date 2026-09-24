@@ -1,0 +1,63 @@
+---
+name: acq
+description: >
+  Ask ACQ AI (Mozi) from Claude Code with the person's own docs as the
+  context: shape the question, show it, send it through the bundled script on
+  their yes, push back on the answer, and bring the mechanics home with the
+  edits they imply. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this past
+  ACQ", "what would ACQ say", "set up ACQ AI", or a pasted ACQ AI reply to sort
+  through.
+---
+
+# acq
+
+ACQ AI advises. The person decides. This skill runs the loop: the question,
+the send, the pushback, the result. The script is
+`${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py`. Every send goes through it, and every
+send needs the person's yes.
+
+## First run: set it up
+
+Start with the state of things:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
+```
+
+- **Playwright not installed** → run `setup`. It makes a private venv with Playwright and its Chromium (one to three minutes). Pass `--company "Their Company"` when they belong to more than one company on ACQ AI, so the sign-in list is clicked for them.
+- **Login not yet** → run `login`. It opens a browser window and waits for them, up to ten minutes, so give the command a long timeout, or hand it to them to run in their own terminal. Tell them what to do in the window: sign in with the email code, click your company if a list shows, then send one short message there ("hi" is enough). The script learns the chat route from that message. It closes the window on its own once it has both.
+- **Route not learned** after a login → they can run `login` again and send a message, or do the by-hand step in the README (Copy as cURL, then `discover --from-curl`).
+
+## The loop: `/acq <task>`
+
+1. **Interpret.** Turn the task into one question ACQ AI can answer with mechanics: what to change, why it works, what it displaces. A question about the person's voice, or about a relationship, is a different kind of question. Say so, and ask what they want ACQ AI's read on.
+
+2. **Gather.** Read the docs the person points at, or the folder you are in. Build the question with the situation, the numbers, the decision, and the docs that matter, pasted in whole. Ask ACQ AI to answer in the person's own terms, to say what each recommendation rests on (their docs, its pattern library, or a guess), and to name any contradiction it sees.
+
+   What stays home: client names, call transcripts, anything the person calls private, and anything you would hesitate to read aloud to a stranger. When in doubt, ask before you include it.
+
+3. **Show, then send.** Write the question to a temp file (an argv cannot carry a long paste). Show the person what is about to go out: the question and the list of docs riding with it. Wait for their yes. Then:
+
+   ```
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" send --file /tmp/acq-question.md -y
+   ```
+
+   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer. Push back once or twice: where it is thin, ask it to go deeper. Where it stacks urgency, ask for the mechanism underneath. Where it contradicts a doc, say which one. Pass `--new` when the next question is a different topic.
+
+4. **Report.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
+   - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten.
+   - **Later.** An idea worth keeping that changes more than today's question.
+   - **Drop.** The rest, with one line on why.
+
+   Show the edits. Make them only when asked.
+
+## When the send fails
+
+Stop and say why, with the fix the script named: `login` for a profile that is not signed in, `setup` for a missing Playwright, the login window (or `discover`) for a route never learned, a fresh `MOZI_TOKEN` for an expired cookie on the `--http` path. Then run `probe` and show it. Never answer alone and present it as ACQ AI's. Answering alone is a different thing, and it is labeled as yours.
+
+## Guards
+
+- Nothing sends without a yes. `-y` on the command is that yes, and it comes from the person, in the chat, after they have seen the question.
+- One question at a time. The script paces itself, and a batch is a series of yeses.
+- The script reaches ACQ AI's chat and nothing else. It never posts to the community.
+- The person's account is theirs. The tool does what they would do by hand, in their own browser, for their own use.
