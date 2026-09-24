@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.5.1] - 2026-09-24
+
+### Fixed
+- Fail a send whose reply stops partway, and keep the part on file (4fb78f5)
+  When ACQ AI's reply stops partway with an error, send now exits 1 and files the part it got in the conversation's answer file, with a closing line that says where the reply stopped and why. It had kept the part as the whole answer and exited 0. The conversation holds your question, so send --continue on that file can ask again there.
+
 ## [0.5.0] - 2026-09-24
 
 ### Added
