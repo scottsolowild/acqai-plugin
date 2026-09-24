@@ -18,6 +18,18 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. By hand:
 `./release.sh --yes --push`.
 
+## [0.4.0] - 2026-09-24
+
+### Added
+- `send --continue ANSWER` goes back to the conversation an answer on file used, named by its file name, a prefix of it, or its path. That chat was saved with its app, so a chat from the other app still stops before it goes out.
+- A private-names list, `private-names.txt` in the state folder, kept with `names add` and `names remove`. When a question includes one of the names, the send stops before it asks for your yes, and the dry run shows it as a NOT line.
+- `outcome ANSWER --adopt "…" --later "…" --drop "…"` records what came of an answer at the end of its file, and `outcome ANSWER` reads it back. `answers` shows each answer's chat and that record.
+- `send --paste` takes the question from the clipboard, after an optional note.
+- The unit tests run in CI: the transport's tests, shared byte for byte with the notes repo, and the script's own.
+
+### Changed
+- `send --dry-run` exits 1 when a line says NOT ready, so a caller can check before it asks for a yes. It still exits 0 when every check passes.
+
 ## [0.3.2] - 2026-09-24
 
 ### Fixed
