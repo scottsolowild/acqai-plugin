@@ -83,10 +83,12 @@ def _venv_has_playwright() -> bool:
         return False
 
 
-def _under_venv(argv: list) -> "int | None":
+def _under_venv(argv: list, stdin_text: "str | None" = None) -> "int | None":
     """A command that drives the browser runs under the venv setup made. When
     this interpreter lacks Playwright and the venv exists, run there and hand
-    back its exit code. None means stay here."""
+    back its exit code. None means stay here. stdin_text, when given, becomes
+    the child's stdin: text this process already read from its own, which the
+    child, running the same argv, would otherwise find empty."""
     py = _venv_python()
     # ACQAI_IN_VENV marks the child started below, so a venv python that still
     # fails the prefix check (its pyvenv.cfg gone, say) stops after one hop
@@ -102,7 +104,10 @@ def _under_venv(argv: list) -> "int | None":
     except OSError:
         return None
     env = dict(os.environ, ACQAI_IN_VENV="1")
-    return subprocess.call([str(py), str(SCRIPT), *argv], env=env)
+    cmd = [str(py), str(SCRIPT), *argv]
+    if stdin_text is None:
+        return subprocess.call(cmd, env=env)
+    return subprocess.run(cmd, env=env, input=stdin_text, text=True).returncode
 
 
 def _pick_python() -> "str | None":
@@ -145,16 +150,23 @@ def _flag_value(rest: list, flag: str) -> "str | None":
     return value
 
 
+def _file_arg(rest: list) -> "str | None":
+    """The PATH after --file, or None when the flag is absent. `-` is stdin."""
+    if "--file" not in rest:
+        return None
+    i = rest.index("--file")
+    if i + 1 >= len(rest):
+        raise ValueError("--file needs a path (- for stdin)")
+    return rest[i + 1]
+
+
 def _message_from(rest: list) -> "str | None":
     """The question, from a positional argument or --file PATH (- for stdin).
     A long paste of docs is more than an argv can carry, so the file is the way
     a grounded question reaches the transport. An empty file is an error rather
     than an empty send, because a send spends your one yes."""
-    if "--file" in rest:
-        i = rest.index("--file")
-        if i + 1 >= len(rest):
-            raise ValueError("--file needs a path (- for stdin)")
-        path = rest[i + 1]
+    path = _file_arg(rest)
+    if path is not None:
         text = sys.stdin.read() if path == "-" else pathlib.Path(path).read_text(encoding="utf-8")
         if not text.strip():
             raise ValueError(f"--file {path} is empty; nothing to send")
@@ -368,7 +380,11 @@ def cmd_send(rest: list, argv: list) -> int:
     if new:
         mozilib.clear_chat_id()
     if not http:
-        code = _under_venv(argv)
+        # `--file -` spent stdin in _message_from. The child under the venv
+        # runs the same argv, so the text goes to it as its stdin, and its
+        # own `--file -` reads the same question.
+        stdin_text = message if _file_arg(rest) == "-" else None
+        code = _under_venv(argv, stdin_text=stdin_text)
         if code is not None:
             return code
     transport = "HTTP" if http else "browser"

@@ -52,6 +52,24 @@ jobs:
           mkdir -p "$site/playwright"
           touch "$site/playwright/__init__.py"
           ACQAI_STATE_DIR="$state" python3 plugins/acqai/scripts/acqai.py probe --session | grep -q "^playwright: installed here"
+      # `--file -` reads the question from stdin before the hop, and the child
+      # under the venv cannot read it again, so the parent hands the text over
+      # as the child's stdin. With no route on file here, the child then stops
+      # in the transport: exit 1 and "no Mozi endpoint learned yet", which
+      # proves the text crossed the hop (a child that read an empty stdin
+      # stops earlier, with exit 2 and "is empty"). Nothing can be sent:
+      # there is no endpoint and no browser here. Reuses the venv the step
+      # above made.
+      - name: send --file - carries the question across the venv hop
+        run: |
+          state="$RUNNER_TEMP/acqai-venv"
+          set +e
+          out=$(printf 'hello from stdin' | ACQAI_STATE_DIR="$state" python3 plugins/acqai/scripts/acqai.py send --file - -y 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          test "$code" -eq 1
+          grep -q "no Mozi endpoint learned yet" <<<"$out"
       - name: Manifests parse as JSON
         run: |
           for f in .claude-plugin/marketplace.json plugins/acqai/.claude-plugin/plugin.json; do
