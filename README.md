@@ -81,9 +81,8 @@ Say what you want in plain English:
 - "sort that reply: what do we adopt, what waits, what do we drop"
 
 Claude writes the question from your docs and shows it before anything is
-sent. The yes is yours, every time. Answers are kept in
-`~/.config/acqai/answers/`, one file per question, so nothing is lost when the
-chat scrolls away.
+sent. Answers are kept in `~/.config/acqai/answers/`, one file per question,
+so nothing is lost when the chat scrolls away.
 
 ## What you need
 
