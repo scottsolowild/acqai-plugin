@@ -18,6 +18,11 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. By hand:
 `./release.sh --yes --push`.
 
+## [0.3.2] - 2026-09-24
+
+### Fixed
+- `send --file -` reaches the venv with the question intact. The question was read from stdin before the hop into the private venv, and the child re-read an empty stdin and stopped with "--file - is empty; nothing to send". The text now goes to the child as its stdin.
+
 ## [0.3.1] - 2026-09-24
 
 ### Changed
