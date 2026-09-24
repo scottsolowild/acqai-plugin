@@ -8,6 +8,12 @@ changed in a breaking way, a **minor** bump adds capability, and a **patch**
 fixes without touching the contract. Pre-1.0, the contract is not frozen yet,
 so expect the shape to move.
 
+## [0.2.2] - 2026-09-24
+
+### Fixed
+- `send`, `login`, `login-legacy`, and `probe --session` move into the private venv again when `python3` is the Python the venv was built from, which is the default with Homebrew Python on a Mac. They had stayed in the system Python and stopped with "Playwright is not installed", which running `setup` could not fix.
+- `send --dry-run --new` keeps the saved conversation, and its `chat:` line says "new conversation". Only a send that goes ahead starts the new one; a no at the y/N prompt keeps the old one too.
+
 ## [0.2.1] - 2026-09-24
 
 ### Added

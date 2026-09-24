@@ -88,14 +88,21 @@ def _under_venv(argv: list) -> "int | None":
     this interpreter lacks Playwright and the venv exists, run there and hand
     back its exit code. None means stay here."""
     py = _venv_python()
-    if _playwright_here() or not py.is_file():
+    # ACQAI_IN_VENV marks the child started below, so a venv python that still
+    # fails the prefix check (its pyvenv.cfg gone, say) stops after one hop
+    # instead of starting itself again forever.
+    if _playwright_here() or not py.is_file() or os.environ.get("ACQAI_IN_VENV"):
         return None
+    # Inside the venv, sys.prefix is the venv. The resolved executables can't
+    # tell: venv/bin/python is a symlink chain to the python3 that built it, so
+    # with Homebrew Python both sides resolve to the same binary.
     try:
-        if pathlib.Path(sys.executable).resolve() == py.resolve():
+        if pathlib.Path(sys.prefix).resolve() == VENV.resolve():
             return None
     except OSError:
         return None
-    return subprocess.call([str(py), str(SCRIPT), *argv], env=os.environ.copy())
+    env = dict(os.environ, ACQAI_IN_VENV="1")
+    return subprocess.call([str(py), str(SCRIPT), *argv], env=env)
 
 
 def _pick_python() -> "str | None":
@@ -328,11 +335,9 @@ def cmd_send(rest: list, argv: list) -> int:
     if message is None:
         _say('send needs a question: send "..." or send --file PATH (- for stdin)')
         return 2
-    if new:
-        mozilib.clear_chat_id()
     if dry:
         cfg = mozilib.endpoint() or {}
-        cid = mozilib.load_chat_id()
+        cid = None if new else mozilib.load_chat_id()
         shown = message.strip()
         if len(shown) > 400:
             shown = shown[:399].rstrip() + "…"
@@ -350,6 +355,10 @@ def cmd_send(rest: list, argv: list) -> int:
     stop = _consent(yes)
     if stop is not None:
         return stop
+    # Only a send that goes ahead drops the saved conversation: a dry run or a
+    # no at the prompt keeps it.
+    if new:
+        mozilib.clear_chat_id()
     if not http:
         code = _under_venv(argv)
         if code is not None:
