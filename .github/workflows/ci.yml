@@ -22,6 +22,8 @@ jobs:
       # not installed here: the browser path is proved on a member's own
       # machine, and every command below runs without it.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: The scripts compile
         run: python3 -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py
       # tests/ holds the transport pair's tests, shared byte for byte with the
@@ -29,6 +31,34 @@ jobs:
       # of this job: the page is a fake and the transport is never reached.
       - name: Unit tests
         run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai-tests" PYTHONPATH=plugins/acqai/scripts python3 -m unittest discover -s tests -p "test_*.py"
+      # A commit's type is what the release reads, and CI writes the version,
+      # so a message carries a Conventional Commit type and no version number.
+      # A PR fails on a bad message. A push to main has already landed, so
+      # there the check reports, and a commit without a type releases nothing.
+      - name: Commit messages are Conventional Commits with no version
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            python3 tools/release.py lint "origin/${{ github.base_ref }}..HEAD"
+          else
+            python3 tools/release.py lint --warn
+          fi
+      - name: The version is left for CI to stamp
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.base_ref }}"
+          read_version='import json,sys; print(json.load(sys.stdin)["version"])'
+          before="$(git show "$base:plugins/acqai/.claude-plugin/plugin.json" | python3 -c "$read_version")"
+          after="$(python3 -c "$read_version" < plugins/acqai/.claude-plugin/plugin.json)"
+          if [[ "$before" != "$after" ]]; then
+            echo "::error::plugin.json's version is stamped by CI after the merge; leave it at $before"
+            exit 1
+          fi
+          if git diff "$base" -- CHANGELOG.md | grep -q '^+## \['; then
+            echo "::error::CHANGELOG.md's version sections are written by CI after the merge"
+            exit 1
+          fi
+          echo "the version stays $before until CI stamps the release"
       # py_compile only compiles the script, and --help runs the code that
       # builds the command table.
       - name: acqai.py --help exits 0
@@ -101,8 +131,8 @@ jobs:
               sys.exit(f"marketplace entry version is {entry_ver}, plugin.json is {version}")
           print(f"marketplace ok; plugin {plugin['name']} @ {version}")
           PY
-      # The version is typed by hand into plugin.json and CHANGELOG.md at each
-      # release; CI tags acqai--vX.Y.Z (and vX.Y.Z) when that bump lands on main.
+      # CI stamps plugin.json and CHANGELOG.md in one commit at each release,
+      # so the two always name the same version.
       - name: plugin.json version matches CHANGELOG.md
         run: |
           python3 - <<'PY'
@@ -113,7 +143,7 @@ jobs:
               heading = re.search(r"^## \[(\d+\.\d+\.\d+[^\]]*)\]", f.read(), re.M)
           newest = heading.group(1) if heading else None
           if version != newest:
-              sys.exit(f"plugin.json version is {version}, and the first ## [x.y.z] heading in CHANGELOG.md is {newest}. Bump both in the same commit.")
+              sys.exit(f"plugin.json version is {version}, and the first ## [x.y.z] heading in CHANGELOG.md is {newest}. CI stamps both; leave them to it.")
           print(f"plugin.json and CHANGELOG.md both say {version}.")
           PY
       # On a tag push, the tag name is the release: it must match plugin.json.
@@ -133,8 +163,11 @@ jobs:
           print(f"tag {tag} matches plugin.json {version}.")
           PY
 
-  # On a version bump to main: tag acqai--vX.Y.Z (Claude) and vX.Y.Z, push,
-  # and open a GitHub Release. That is the publish for this marketplace.
+  # After each push to main: read the commits since the last release, stamp
+  # the version they call for into plugin.json and CHANGELOG.md, tag
+  # acqai--vX.Y.Z (Claude) and vX.Y.Z, push, and open a GitHub Release. That is
+  # the publish for this marketplace. A push made with GITHUB_TOKEN starts no
+  # new run, so the stamp commit does not loop.
   release:
     needs: checks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -145,54 +178,26 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Tag and publish if the version bumped
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stamp the version the merged commits call for
+        id: stamp
         run: |
           set -euo pipefail
-          version="$(python3 -c 'import json; print(json.load(open("plugins/acqai/.claude-plugin/plugin.json"))["version"])')"
-          name="$(python3 -c 'import json; print(json.load(open("plugins/acqai/.claude-plugin/plugin.json"))["name"])')"
-          claude_tag="${name}--v${version}"
-          semver_tag="v${version}"
-
-          prev=""
-          if git rev-parse -q --verify HEAD^ >/dev/null; then
-            prev="$(git show HEAD^:plugins/acqai/.claude-plugin/plugin.json 2>/dev/null \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' || true)"
-          fi
-          if [[ "$prev" == "$version" ]]; then
-            echo "version still $version (unchanged since parent); nothing to release"
-            exit 0
-          fi
-          if git rev-parse -q --verify "refs/tags/$claude_tag" >/dev/null; then
-            echo "$claude_tag already exists; nothing to release"
-            exit 0
-          fi
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           ./release.sh --yes --push
-
-          notes="$(
-            NOTES_VERSION="$version" python3 - <<'PY'
-          import os, re
-          version = os.environ["NOTES_VERSION"]
-          text = open("CHANGELOG.md").read()
-          m = re.search(
-              rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |\Z)",
-              text, re.M | re.S)
-          body = (m.group(1).strip() if m else "").strip()
-          print(body or f"acqai {version}")
-          PY
-          )"
-          if gh release view "$claude_tag" >/dev/null 2>&1; then
-            echo "GitHub Release $claude_tag already exists"
+      - name: Open the GitHub Release
+        if: steps.stamp.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.stamp.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="acqai--v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub Release $tag already exists"
           else
-            gh release create "$claude_tag" \
-              --title "acqai ${version}" \
-              --notes "$notes" \
-              --target "${{ github.sha }}"
-            echo "published GitHub Release $claude_tag"
+            gh release create "$tag" --title "acqai ${VERSION}" --notes "$(./release.sh notes "$VERSION")"
+            echo "published GitHub Release $tag"
           fi
           echo
           echo "Claude marketplace publish: members who added scottsolowild/acqai-plugin"

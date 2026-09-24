@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Conventional Commits with no version numbers: the check CI runs on each PR.
+# Turn it on in a clone with: git config core.hooksPath .githooks
+exec python3 "$(git rev-parse --show-toplevel)/tools/release.py" lint --message-file "$1"

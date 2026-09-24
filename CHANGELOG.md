@@ -8,15 +8,17 @@ changed in a breaking way, a **minor** bump adds capability, and a **patch**
 fixes without touching the contract. Pre-1.0, the contract is not frozen yet,
 so expect the shape to move.
 
-Each released version is two git tags on the commit that bumps `plugin.json`
-and this file together: `acqai--vX.Y.Z` (Claude Code's release convention)
-and `vX.Y.Z` (plain SemVer). A push to `main` that bumps the version tags
-both and opens a GitHub Release. That is the publish for this marketplace:
-members who added `scottsolowild/acqai-plugin` pick up the bump on their next
-marketplace update. Anthropic's community catalog is a separate one-time
+CI writes each version. After every push to `main`, it reads the commits
+merged since the last release: a `fix` is a patch, a `feat` is a minor, and a
+breaking change is a major, or a minor while the version is 0.x. It stamps the
+version into `plugin.json` and a new section here, commits both, tags that
+commit `acqai--vX.Y.Z` (Claude Code's release convention) and `vX.Y.Z` (plain
+SemVer), and opens a GitHub Release. That is the publish for this marketplace:
+members who added `scottsolowild/acqai-plugin` pick up the new version on
+their next marketplace update. Anthropic's community catalog is a separate one-time
 submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit));
-after approval their CI bumps the pin when this repo moves. By hand:
-`./release.sh --yes --push`.
+after approval their CI bumps the pin when this repo moves. `./release.sh`
+shows what the next release would be.
 
 ## [0.4.0] - 2026-09-24
 
