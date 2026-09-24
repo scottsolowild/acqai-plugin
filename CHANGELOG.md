@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.5.0] - 2026-09-24
+
+### Added
+- Keep one answer file per conversation, read as a digest first (fdbbd72)
+  A follow-up in the same chat lands in the file its question started, so a conversation reads top to bottom in one place. The file opens on the question in one line, the best answer, and what changed. Each message follows under who sent it, Claude ➡️ ACQ or ACQ ➡️ Claude, with its own headings a level below, then the commands that ran and a timeline.
+
 ## [0.4.0] - 2026-09-24
 
 ### Added
