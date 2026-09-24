@@ -742,7 +742,13 @@ def login(*, company: str | None = None, wait_s: int = 600) -> None:
                           "Press Enter here to save.",
                           file=sys.stderr, flush=True)
                     last_status = now
-                time.sleep(0.5)
+                # A Playwright call, as in _wait_for_route, so the route
+                # listener runs during the pause too. A page that closed
+                # falls back to a sleep; the next pass picks a live one.
+                try:
+                    page.wait_for_timeout(500)
+                except Exception:
+                    time.sleep(0.5)
             ok = _session_ready(page, ctx)
             if not ok and not forced:
                 print("Still waiting on Clerk. Finish the email code if "
