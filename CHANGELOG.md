@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.5.2] - 2026-09-24
+
+### Fixed
+- Fail a cut-short answer on the older app's stream too (fea1eb3)
+  When the older ACQ AI app (login-legacy) stops a reply partway with an error, send now exits 1 and files the part it got, marked where the reply stopped and why, the way a portal reply that stops partway already does. When that app sends an error before any reply, send exits 1 and names the error, where it had filed the raw stream as the answer.
+
 ## [0.5.1] - 2026-09-24
 
 ### Fixed
