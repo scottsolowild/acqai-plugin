@@ -25,7 +25,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
 ```
 
 - **Playwright not installed** → run `setup`. It makes a private venv with Playwright and its Chromium (one to three minutes). Pass `--company "Their Company"` when they belong to more than one company on ACQ AI, so the sign-in list is clicked for them.
-- **Login not yet** → run `login`. It opens a browser window and waits for them, up to ten minutes, so give the command a long timeout, or hand it to them to run in their own terminal. Tell them what to do in the window: sign in with the email code, click your company if a list shows, then send one short message there ("hi" is enough). The script learns the chat route from that message. It closes the window on its own once it has both.
+- **Login not yet** → run `login`. It opens a browser window at portal.acquisition.com/advisor and waits for them, up to ten minutes, so give the command a long timeout, or hand it to them to run in their own terminal. Tell them what to do in the window: sign in with the email code, click your company if a list shows, then send one short message there ("hi" is enough). The script learns the chat route from that message. It closes the window on its own once it has both.
 - **Route not learned** after a login → they can run `login` again and send a message, or do the by-hand step in the README (Copy as cURL, then `discover --from-curl`).
 
 ## The loop: `/acq <task>`
