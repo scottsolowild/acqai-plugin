@@ -185,6 +185,8 @@ Config, all optional:
 ## Changelog
 
 Version history and the versioning contract are in [CHANGELOG.md](CHANGELOG.md).
+Released versions are git tags (`v0.2.2`, …). After a version bump lands on
+`main`, tag it with `./release.sh --yes` and push the tag.
 
 ## License
 

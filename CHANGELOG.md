@@ -8,6 +8,10 @@ changed in a breaking way, a **minor** bump adds capability, and a **patch**
 fixes without touching the contract. Pre-1.0, the contract is not frozen yet,
 so expect the shape to move.
 
+Each released version is a git tag `vX.Y.Z` on the commit that bumps
+`plugin.json` and this file together. `./release.sh --yes` creates that tag
+from HEAD; `git push origin vX.Y.Z` publishes it.
+
 ## [0.2.2] - 2026-09-24
 
 ### Fixed

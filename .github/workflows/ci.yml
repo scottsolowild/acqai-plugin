@@ -3,6 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
 
 # Cancel a superseded run when new commits land, so queues don't pile up.
 concurrency:
@@ -43,7 +44,8 @@ jobs:
           for f in .claude-plugin/marketplace.json plugins/acqai/.claude-plugin/plugin.json; do
             python3 -m json.tool "$f" > /dev/null || { echo "$f does not parse as JSON" >&2; exit 1; }
           done
-      # The version is typed by hand into two files at each release.
+      # The version is typed by hand into plugin.json and CHANGELOG.md at each
+      # release; the matching git tag is vX.Y.Z (./release.sh).
       - name: plugin.json version matches CHANGELOG.md
         run: |
           python3 - <<'PY'
@@ -56,4 +58,18 @@ jobs:
           if version != newest:
               sys.exit(f"plugin.json version is {version}, and the first ## [x.y.z] heading in CHANGELOG.md is {newest}. Bump both in the same commit.")
           print(f"plugin.json and CHANGELOG.md both say {version}.")
+          PY
+      # On a tag push, the tag name is the release: it must match plugin.json.
+      - name: Tag version matches plugin.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          tag = os.environ["GITHUB_REF_NAME"]
+          with open("plugins/acqai/.claude-plugin/plugin.json") as f:
+              version = json.load(f)["version"]
+          want = f"v{version}"
+          if tag != want:
+              sys.exit(f"tag is {tag}, plugin.json version is {version} (want {want})")
+          print(f"tag {tag} matches plugin.json {version}.")
           PY
