@@ -11,7 +11,7 @@ so expect the shape to move.
 ## [0.1.0] - 2026-09-23
 
 ### Fixed
-- Install steps use `claude plugin marketplace add` / `claude plugin install`. The `/plugin` slash commands fail in the Claude Code desktop app, and Desktop's Add marketplace dialog often fails on a repo the terminal already added.
+- Install leads with two paths: terminal (`claude plugin marketplace add` / `install`), or Claude Code Desktop on a local session. `/plugin` in the Desktop composer is not available; if Add marketplace fails, use the terminal.
 
 ### Added
 - First release: the `acq` skill and the `/acq` command.
