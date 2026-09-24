@@ -7,7 +7,7 @@ the context:
 
 - Shape the task into one question ACQ AI can answer with mechanics.
 - Show the person what is about to go out, and wait for their yes.
-- Send it through the bundled script, read the answer, and push back once or twice in the same conversation.
+- Send it through the bundled script, read the answer, and refine it with a follow-up question or two in the same conversation, each one bringing in what the person's docs add.
 - Report what ACQ AI said and what you added, and sort the result: adopt, later, or drop.
 
 Rules:

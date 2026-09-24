@@ -297,11 +297,37 @@ def _request(method: str, url: str, *, body: bytes | None = None,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.read()
     except urllib.error.HTTPError as err:
+        try:
+            why = refusal(err.read())
+        except Exception:
+            why = ""
+        why = f": {why}" if why else ""
         if err.code in (401, 403, 429):
-            raise MoziBlocked(f"{err.code} from mozi on {url}") from err
-        raise MoziError(f"{err.code} on {url}") from err
+            raise MoziBlocked(f"{err.code} from mozi on {url}{why}") from err
+        raise MoziError(f"{err.code} on {url}{why}") from err
     except Exception as err:
         raise MoziError(f"{err} on {url}") from err
+
+
+def refusal(raw: "bytes | str | None") -> str:
+    """The server's own reason from an error body, on one short line, or "".
+
+    The portal answers {error, message, statusCode}. Its 403 for a session
+    with no workspace picked reads "ACQ AI and Command Center access is not
+    active.", which says more than the status does."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    try:
+        data = json.loads(raw or "")
+    except ValueError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    for key in ("message", "error"):
+        val = data.get(key)
+        if isinstance(val, str) and val.strip():
+            return " ".join(val.split())[:200]
+    return ""
 
 
 # --- endpoint config, learned from a captured cURL ----------------------------

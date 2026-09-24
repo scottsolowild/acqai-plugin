@@ -3,8 +3,8 @@ name: acq
 description: >
   Ask ACQ AI (Mozi) from Claude Code with the person's own docs as the
   context: shape the question, show it, send it through the bundled script on
-  their yes, push back on the answer, and bring the mechanics home with the
-  edits they imply. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this past
+  their yes, refine the answer with follow-up questions, and bring the
+  mechanics home with the edits they imply. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this past
   ACQ", "what would ACQ say", "set up ACQ AI", or a pasted ACQ AI reply to sort
   through.
 ---
@@ -12,7 +12,7 @@ description: >
 # acq
 
 ACQ AI advises. The person decides. This skill runs the loop: the question,
-the send, the pushback, the result. The script is
+the send, the follow-ups, the result. The script is
 `${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py`. Every send goes through it, and every
 send needs the person's yes.
 
@@ -42,7 +42,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" send --file /tmp/acq-question.md -y
    ```
 
-   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer. Push back once or twice: where it is thin, ask it to go deeper. Where it stacks urgency, ask for the mechanism underneath. Where it contradicts a doc, say which one. Pass `--new` when the next question is a different topic.
+   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation. Pass `--new` when the next question is a different topic.
 
 4. **Report.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
    - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten.

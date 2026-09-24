@@ -15,14 +15,16 @@ cookies are domain-scoped).
                    in the profile and as decrypted storage-state JSON); the
                    member's first message there teaches the chat route;
                    email OTP on the sign-in form (Google is skipped when their
-                   OAuth client is deleted); clicks MOZI_COMPANY on the
-                   org picker, or leaves the click to the member; Enter
-                   saves at any time
+                   OAuth client is deleted); clicks MOZI_COMPANY on Clerk's
+                   org picker or the portal's workspace picker, or leaves the
+                   click to the member; Enter saves at any time
   require_session  headless chat-page check on the same Chromium binary as
                    login (not chrome-headless-shell); ask uses this before
                    Claude; also clicks the company when Clerk lands on /choose
-  send(question)   launch, in-page fetch, return the answer; keeps a chat id so
-                   a dialogue can continue in the same conversation
+                   or the portal asks which workspace
+  send(question)   launch, wait for the chat box, in-page fetch, return the
+                   answer; keeps a chat id so a dialogue can continue in the
+                   same conversation
 
 Runs on the member's own machine, where the browser has normal network. The
 setup step (./setup.sh in the notes repo, `setup` in the plugin) installs
@@ -56,6 +58,7 @@ STATE_FILE = PROFILE_DIR.parent / "storage-state.json"
 # name, the member clicks it in the window, and the headless paths say so.
 DEFAULT_COMPANY = ""
 _company_hint_shown = False
+_company_missed: set[str] = set()
 
 # Playwright's headless=True picks chrome-headless-shell, a different binary
 # than headed Chromium. Clerk cookies written during login live in that
@@ -412,15 +415,43 @@ def dismiss_upgrade(page) -> bool:
     return False
 
 
+# The portal's workspace gate. A session with no workspace picked draws
+# "Choose a workspace" at /advisor, one button per workspace, and every
+# /api/sandbar call answers 403 ("ACQ AI and Command Center access is not
+# active.") until one is picked. The URL stays /advisor the whole time.
+_WORKSPACE_BTN = "button[data-aegis-org-id]"
+
+
+def _workspace_picker_shown(page) -> bool:
+    """True when the portal asks which workspace to use."""
+    for scope in _scopes(page):
+        try:
+            loc = scope.locator(_WORKSPACE_BTN)
+        except Exception:
+            continue
+        if _clickable(loc):
+            return True
+    return False
+
+
+def _portal_page(page) -> bool:
+    return any("portal.acquisition.com" in (u or "").lower()
+               for u in _urls(page))
+
+
 def _logged_in(page) -> bool:
-    """On Mozi /chat, past Clerk sign-in, the org picker, and the upgrade page.
+    """On the chat page, past Clerk sign-in, the org or workspace picker, and
+    the upgrade page.
 
     Clerk often keeps accounts.acquisition.com in an iframe after the top
     URL has already moved to /chat. A top-URL-only check then reports
     success, login closes, and the org was never picked. The upgrade
-    interstitial can sit on /chat the same way.
+    interstitial can sit on /chat the same way, and the portal's workspace
+    picker sits on /advisor.
     """
     if _upgrade_shown(page):
+        return False
+    if _workspace_picker_shown(page):
         return False
     urls = _urls(page)
     if any(_auth_url(u) for u in urls):
@@ -448,10 +479,34 @@ def _chat_composer(page) -> bool:
 
 
 def _session_ready(page, ctx) -> bool:
-    """Past auth in every frame, with Clerk's handshake or a live chat box."""
+    """Past auth in every frame, with Clerk's handshake or a live chat box.
+
+    On the portal only the chat box counts. Its session cookie is set while
+    the workspace picker is still up, and the picker draws after the page
+    loads, so a cookie check passes before anyone has picked.
+    """
     if not _logged_in(page):
         return False
-    return _clerk_signed_in(ctx) or _chat_composer(page)
+    if _chat_composer(page):
+        return True
+    return _clerk_signed_in(ctx) and not _portal_page(page)
+
+
+def _await_session(page, ctx, timeout: float) -> bool:
+    """Poll until the page is a usable chat, or the timeout passes.
+
+    Clicks through the sign-in upgrade page and the company or workspace pick
+    on the way. A send posts only after this, because the portal answers 403
+    to every chat call from a session with no workspace picked.
+    """
+    deadline = time.monotonic() + max(1, timeout)
+    while time.monotonic() < deadline:
+        dismiss_upgrade(page)
+        _ensure_company(page)
+        if _session_ready(page, ctx):
+            return True
+        time.sleep(0.25)
+    return False
 
 
 def _enter_pressed() -> bool:
@@ -488,12 +543,15 @@ def _active_page(ctx, fallback):
 
 
 def _on_org_choose(page, company: str | None = None) -> bool:
-    """Clerk's organization picker after email OTP (or Microsoft).
+    """Clerk's organization picker after email OTP (or Microsoft), or the
+    portal's workspace picker.
 
     Looks at every frame: the picker is often an iframe, and the path is
     not always `/sign-in/choose`. Visible company text counts too.
     """
     name = (company or company_name()).strip()
+    if _workspace_picker_shown(page):
+        return True
     for url in _urls(page):
         low = url.lower()
         if "accounts.acquisition.com" in low and (
@@ -504,6 +562,15 @@ def _on_org_choose(page, company: str | None = None) -> bool:
 
 def _company_locs(scope, name: str):
     locs = []
+    # The portal's workspace button holds a monogram, the name, and "Select
+    # →", so its accessible name is "SS Scott Solo Wild Select →" and none of
+    # the role lookups below match it. Find it by the name's own span.
+    try:
+        locs.append(scope.locator(_WORKSPACE_BTN).filter(
+            has=scope.get_by_text(
+                re.compile(rf"^\s*{re.escape(name)}\s*$", re.I))))
+    except Exception:
+        pass
     for role in ("button", "option", "link", "menuitem"):
         try:
             locs.append(scope.get_by_role(role, name=name, exact=True))
@@ -552,12 +619,9 @@ def select_company(page, company: str | None = None) -> bool:
     for scope in _scopes(page):
         for loc in _company_locs(scope, name):
             try:
-                target = loc.first
-                if not target.count():
+                if not _clickable(loc):
                     continue
-                if not target.is_visible():
-                    continue
-                target.click()
+                loc.first.click()
                 return True
             except Exception:
                 continue
@@ -566,10 +630,12 @@ def select_company(page, company: str | None = None) -> bool:
 
 def _ensure_company(page, *, company: str | None = None,
                     settle_ms: int = 8000) -> bool:
-    """If the page is on Clerk's org picker, click the company and wait.
+    """If the page is on Clerk's org picker or the portal's workspace picker,
+    click the company and wait.
 
     Returns True when the page is past auth (on /chat or equivalent). Safe to
-    call when already logged in: then it is a no-op.
+    call when already logged in: then it is a no-op. Callers poll this, so a
+    name that is not on the list is reported once, not on every poll.
     """
     global _company_hint_shown
     name = company or company_name()
@@ -584,11 +650,13 @@ def _ensure_company(page, *, company: str | None = None,
                   "or set MOZI_COMPANY (the plugin: setup --company NAME) so it "
                   "is picked for you.", file=sys.stderr, flush=True)
         return False
-    print(f"acqai: selecting company {name!r}…", file=sys.stderr, flush=True)
     if not select_company(page, name):
-        print("acqai: company name was not clickable in this page or its "
-              "frames.", file=sys.stderr, flush=True)
+        if name not in _company_missed:
+            _company_missed.add(name)
+            print(f"acqai: {name!r} was not clickable on the company list in "
+                  "this page or its frames.", file=sys.stderr, flush=True)
         return False
+    print(f"acqai: selected company {name!r}…", file=sys.stderr, flush=True)
     deadline = time.monotonic() + settle_ms / 1000
     while time.monotonic() < deadline:
         if _logged_in(page):
@@ -741,7 +809,15 @@ def _wait_for_route(ctx, page, wait_s: int = 300) -> None:
     while time.monotonic() < deadline:
         if _route_learned() or _enter_pressed():
             return
-        time.sleep(0.5)
+        # A Playwright call, never time.sleep: the sync API hands the request
+        # event to _learn_route only while one runs, so a plain sleep held the
+        # member's message back until the deadline.
+        try:
+            page.wait_for_timeout(500)
+        except Exception:
+            page = _active_page(ctx, None)
+            if page is None:
+                break
     print(f"acqai: no message seen; run {mozilib.CMD} login again, or "
           f"{mozilib.CMD} discover --from-curl <file>.", flush=True)
 
@@ -767,15 +843,8 @@ def require_session(*, timeout: int = 15) -> None:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 page.set_default_timeout(timeout * 1000)
                 page.goto(mozilib.chat_page_url(), wait_until="domcontentloaded")
-                deadline = time.monotonic() + max(1, timeout)
-                while time.monotonic() < deadline:
-                    dismiss_upgrade(page)
-                    _ensure_company(page)
-                    ok = _session_ready(page, ctx)
-                    here = (page.url or "").strip()
-                    if ok:
-                        break
-                    time.sleep(0.25)
+                ok = _await_session(page, ctx, timeout)
+                here = (page.url or "").strip()
             finally:
                 _close(ctx, save=ok)
     except BrowserNotReady:
@@ -800,11 +869,24 @@ def require_session(*, timeout: int = 15) -> None:
     print("acqai: Mozi session ok.", file=sys.stderr, flush=True)
 
 
+def _refused(status: int, what: str, text: str) -> mozilib.MoziError:
+    """The error for an in-page fetch the server refused, with its reason."""
+    why = mozilib.refusal(text).rstrip(".")
+    msg = f"{status} from {what}" + (f": {why}" if why else "")
+    if status in (401, 403, 429):
+        return mozilib.MoziBlocked(
+            f"{msg}; run {mozilib.CMD} login to sign in and pick the company "
+            "again")
+    return mozilib.MoziError(msg)
+
+
 def send(question: str, *, chat_id: str | None = None,
          headless: bool = True, timeout: int = 120) -> tuple[str, str | None]:
     """Send one question through the logged-in browser, return (answer, chat_id).
     Reuses the saved conversation (or chat_id) so follow-ups stay in one thread.
-    On portal sandbar, creates a chat via in-page fetch when none is saved."""
+    Waits for the chat box first, picking the company on the portal's
+    workspace picker when one is up. On portal sandbar, creates a chat via
+    in-page fetch when none is saved."""
     cfg = mozilib.endpoint()
     if not cfg or not cfg.get("url"):
         raise mozilib.MoziError(
@@ -822,8 +904,14 @@ def send(question: str, *, chat_id: str | None = None,
         company = mozilib.company_id_from_endpoint(cfg)
         page.goto(mozilib.chat_page_url(company_id=company),
                   wait_until="domcontentloaded")
-        if not (_ensure_company(page) or _session_ready(page, ctx)):
+        if not _await_session(page, ctx, min(timeout, 30)):
+            picker = _workspace_picker_shown(page)
             _close(ctx, save=False)
+            if picker:
+                raise BrowserNotReady(
+                    "ACQ AI is asking which workspace to use; set MOZI_COMPANY "
+                    "to the name its list shows, or run "
+                    f"{mozilib.CMD} login and click it")
             raise BrowserNotReady(
                 f"the browser profile is not logged in; run {mozilib.CMD} login")
         if not cid and mozilib.is_sandbar(cfg):
@@ -837,8 +925,8 @@ def send(question: str, *, chat_id: str | None = None,
                 {"url": create, "body": mozilib.create_chat_body(question, cfg)})
             if made["status"] >= 400:
                 _close(ctx, save=False)
-                raise mozilib.MoziError(
-                    f"{made['status']} from sandbar chat create")
+                raise _refused(made["status"], "sandbar chat create",
+                               made["text"])
             cid = mozilib.parse_create_chat_id(made["text"].encode("utf-8"))
             created = True
             page.goto(mozilib.chat_page_url(chat_id=cid, company_id=company),
@@ -855,12 +943,8 @@ def send(question: str, *, chat_id: str | None = None,
         print("acqai: posting to Mozi…", file=sys.stderr, flush=True)
         res = page.evaluate(_FETCH_JS, {"url": cfg["url"], "body": body})
         _close(ctx, save=True)
-    if res["status"] in (401, 403):
-        raise mozilib.MoziBlocked(
-            f"{res['status']} from the in-page send; the session may have "
-            f"lapsed, run {mozilib.CMD} login")
     if res["status"] >= 400:
-        raise mozilib.MoziError(f"{res['status']} from chat send ({cfg['url']})")
+        raise _refused(res["status"], f"chat send ({cfg['url']})", res["text"])
     print("acqai: Mozi answered.", file=sys.stderr, flush=True)
     mozilib.save_chat_id(used)
     return mozilib.extract_answer(res["text"].encode("utf-8"), cfg), used

@@ -18,6 +18,15 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. By hand:
 `./release.sh --yes --push`.
 
+## [0.3.0] - 2026-09-24
+
+### Changed
+- After an answer, Claude refines it with a follow-up question or two in the same conversation, each bringing in a number or a result from your docs that ACQ AI did not have yet. It pushed back on the answer before. Only the skill, the `/acq` command, the README, and the plugin description changed for it.
+
+### Fixed
+- A send on the portal waits for a chat page that can take a message. A session with no workspace picked drew "Choose a workspace" at /advisor, and every send from it got a 403 ("ACQ AI and Command Center access is not active."). The send now picks the company set with `setup --company` on that list, and when the company is not on it, it stops before sending and names the setting. A refused send reports the server's reason.
+- `login` could sit on "Send one short message in the window" for its full five minutes after the member had sent one. The wait between checks was `time.sleep`, and Playwright's sync API delivers the request that teaches the chat route only while a Playwright call runs. It now waits with `page.wait_for_timeout`, so the first message is seen within a second.
+
 ## [0.2.2] - 2026-09-24
 
 ### Fixed
