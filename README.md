@@ -37,9 +37,12 @@ If you belong to more than one company on ACQ AI, pass it on the install:
 claude plugin install acqai@acqai-plugin --config mozi_company="Your Company"
 ```
 
-In the Claude Code desktop app, `/plugin` in the composer is not available.
-Install from the terminal first. After that, the plugin shows under **+ →
-Plugins**.
+Use the terminal for install. In the Claude Code desktop app, `/plugin` in
+the composer is not available, and **+ → Add marketplace** often fails on
+the same repo: either a clone that stalls, or (once the terminal already
+added it) a source-shape conflict that shows only as "Failed to add
+marketplace." After the two commands above, skip that dialog. The plugin
+shows under **+ → Plugins**, enabled.
 
 **2. Say "set up ACQ AI".** Claude installs the browser it drives (a private
 copy, in `~/.config/acqai`, so nothing on your machine changes) and opens a
