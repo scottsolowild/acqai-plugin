@@ -1,21 +1,26 @@
 """Playwright transport for Mozi (ACQ AI): drive the member's own logged-in
-browser and send via an in-page fetch to the discovered /api/chat.
+browser and send via an in-page fetch to the discovered chat route.
 
-Why this beats the raw HTTP seam: the browser holds the live Clerk session and
-refreshes the ~60s token itself, so there is nothing to capture and no clock to
-race. The send runs as a same-origin fetch inside the page, so its cookies and
-nonce are the browser's own. One login persists in a local profile.
+Supports both apps (MOZI_BASE picks which login opens):
+  Portal  portal.acquisition.com/advisor  Aegis; sandbar chat + chat-stream
+  Legacy  ai.acquisition.com/chat         Clerk; /api/chat
 
-  login            headed browser to sign into Mozi once (persists the session
+Why this beats the raw HTTP seam: the browser holds the live session and
+refreshes it itself, so there is nothing to capture and no clock to race.
+The send runs as a same-origin fetch inside the page, so its cookies are the
+browser's own. One login persists in a local profile (both hosts can share it;
+cookies are domain-scoped).
+
+  login            headed browser to sign in once (persists the session
                    in the profile and as decrypted storage-state JSON); the
                    member's first message there teaches the chat route;
-                   email OTP on Clerk's sign-in (Google is skipped when their
-                   OAuth client is deleted); clicks MOZI_COMPANY on Clerk's
+                   email OTP on the sign-in form (Google is skipped when their
+                   OAuth client is deleted); clicks MOZI_COMPANY on the
                    org picker, or leaves the click to the member; Enter
                    saves at any time
-  require_session  headless /chat check on the same Chromium binary as login
-                   (not chrome-headless-shell); ask uses this before Claude;
-                   also clicks the company when Clerk lands on /choose
+  require_session  headless chat-page check on the same Chromium binary as
+                   login (not chrome-headless-shell); ask uses this before
+                   Claude; also clicks the company when Clerk lands on /choose
   send(question)   launch, in-page fetch, return the answer; keeps a chat id so
                    a dialogue can continue in the same conversation
 
@@ -78,9 +83,12 @@ def company_name() -> str:
 _FETCH_JS = """
 async ({url, body}) => {
   const nonce = (document.cookie.match(/acq_ui_nonce=([^;]+)/) || [])[1] || '';
+  const headers = {'content-type': 'application/json',
+                   'accept': 'text/event-stream, application/json, text/plain'};
+  if (nonce) headers['x-ui-nonce'] = nonce;
   const r = await fetch(url, {
     method: 'POST',
-    headers: {'content-type': 'application/json', 'x-ui-nonce': nonce},
+    headers,
     body: JSON.stringify(body),
     credentials: 'include',
   });
@@ -140,22 +148,28 @@ def _cookie_list(ctx) -> list[dict]:
     return [c for c in _state_cookies() if isinstance(c, dict)]
 
 
-def _clerk_signed_in(ctx) -> bool:
-    """True when Clerk's client handshake has run.
+def _auth_signed_in(ctx) -> bool:
+    """True when portal Aegis or legacy Clerk has a live session cookie.
 
-    `__session` alone is not enough: Clerk writes that JWT for about 60
-    seconds, and a /chat flash during Google auth leaves one behind while
-    `__client_uat` stays `0`. Clerk then treats the next load as signed out.
-    A non-zero `__client_uat` is the durable signal.
+    Legacy Clerk: `__session` alone is not enough (it can flash during Google
+    auth while `__client_uat` stays `0`). A non-zero `__client_uat` is the
+    durable Clerk signal. Portal: `__Secure-aegis-external.session_token`.
     """
     for cookie in _cookie_list(ctx):
         name = str(cookie.get("name") or "")
-        if not name.startswith("__client_uat"):
-            continue
         val = str(cookie.get("value") or "").strip()
-        if val and val != "0":
+        if not val:
+            continue
+        if name == mozilib._AEGIS_TOKEN or name.endswith(
+                "aegis-external.session_token"):
+            return True
+        if name.startswith("__client_uat") and val != "0":
             return True
     return False
+
+
+# Back-compat name used in older call sites / tests.
+_clerk_signed_in = _auth_signed_in
 
 
 def _close(ctx, *, save: bool = False) -> None:
@@ -237,7 +251,13 @@ def _auth_url(url: str) -> bool:
 
 def _chat_url(url: str) -> bool:
     low = (url or "").lower()
-    return "ai.acquisition.com" in low and "/chat" in low and "sign-in" not in low
+    if "sign-in" in low:
+        return False
+    if "portal.acquisition.com" in low and "/advisor" in low:
+        return True
+    if "ai.acquisition.com" in low and "/chat" in low:
+        return True
+    return False
 
 
 # Clerk/ACQ interstitial between Google and /chat. A /chat URL with this copy
@@ -363,7 +383,7 @@ def recover_google_oauth(page, ctx) -> bool:
           file=sys.stderr, flush=True)
     _abort_google_oauth(ctx)
     try:
-        page.goto(mozilib.base() + "/chat", wait_until="domcontentloaded")
+        page.goto(mozilib.chat_page_url(), wait_until="domcontentloaded")
     except Exception:
         pass
     focus_email_box(page)
@@ -594,7 +614,7 @@ def login(*, company: str | None = None, wait_s: int = 600) -> None:
         ctx = _context(p, headless=False)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         ctx.on("request", _learn_route)
-        page.goto(mozilib.base() + "/chat", wait_until="domcontentloaded")
+        page.goto(mozilib.chat_page_url(), wait_until="domcontentloaded")
         pick = (f"I'll select {name!r} when the company list appears."
                 if name else "If a company list appears, click yours.")
         print("A browser opened. Sign into Mozi with the email box (OTP). "
@@ -648,8 +668,8 @@ def login(*, company: str | None = None, wait_s: int = 600) -> None:
                     here = (page.url or "").strip() or "unknown url"
                     if _upgrade_shown(page):
                         here += "; sign-in upgrade page"
-                    elif _logged_in(page) and not _clerk_signed_in(ctx):
-                        here += "; Clerk handshake not finished"
+                    elif _logged_in(page) and not _auth_signed_in(ctx):
+                        here += "; session handshake not finished"
                     print(f"acqai: still waiting ({here}). "
                           "Press Enter here to save.",
                           file=sys.stderr, flush=True)
@@ -746,7 +766,7 @@ def require_session(*, timeout: int = 15) -> None:
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 page.set_default_timeout(timeout * 1000)
-                page.goto(mozilib.base() + "/chat", wait_until="domcontentloaded")
+                page.goto(mozilib.chat_page_url(), wait_until="domcontentloaded")
                 deadline = time.monotonic() + max(1, timeout)
                 while time.monotonic() < deadline:
                     dismiss_upgrade(page)
@@ -783,7 +803,8 @@ def require_session(*, timeout: int = 15) -> None:
 def send(question: str, *, chat_id: str | None = None,
          headless: bool = True, timeout: int = 120) -> tuple[str, str | None]:
     """Send one question through the logged-in browser, return (answer, chat_id).
-    Reuses the saved conversation (or chat_id) so follow-ups stay in one thread."""
+    Reuses the saved conversation (or chat_id) so follow-ups stay in one thread.
+    On portal sandbar, creates a chat via in-page fetch when none is saved."""
     cfg = mozilib.endpoint()
     if not cfg or not cfg.get("url"):
         raise mozilib.MoziError(
@@ -791,23 +812,46 @@ def send(question: str, *, chat_id: str | None = None,
             f"{mozilib.CMD} login opens, or run: {mozilib.CMD} discover "
             "--from-curl <a Copy-as-cURL of a real send>")
     cid = chat_id if chat_id is not None else mozilib.load_chat_id()
-    body, used = mozilib.build_body(question, cid)
-    if cid:
-        print(f"acqai: continuing Mozi chat {cid[:8]}…",
-              file=sys.stderr, flush=True)
-    else:
-        print("acqai: new Mozi chat…", file=sys.stderr, flush=True)
+    created = False
     sync_playwright = _import_playwright()
     print("acqai: opening Mozi in browser…", file=sys.stderr, flush=True)
     with sync_playwright() as p:
         ctx = _context(p, headless=headless)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.set_default_timeout(timeout * 1000)
-        page.goto(mozilib.base() + "/chat", wait_until="domcontentloaded")
+        company = mozilib.company_id_from_endpoint(cfg)
+        page.goto(mozilib.chat_page_url(company_id=company),
+                  wait_until="domcontentloaded")
         if not (_ensure_company(page) or _session_ready(page, ctx)):
             _close(ctx, save=False)
             raise BrowserNotReady(
                 f"the browser profile is not logged in; run {mozilib.CMD} login")
+        if not cid and mozilib.is_sandbar(cfg):
+            create = mozilib.create_url(cfg)
+            if not create:
+                _close(ctx, save=False)
+                raise mozilib.MoziError("sandbar route has no create URL")
+            print("acqai: creating portal chat…", file=sys.stderr, flush=True)
+            made = page.evaluate(
+                _FETCH_JS,
+                {"url": create, "body": mozilib.create_chat_body(question, cfg)})
+            if made["status"] >= 400:
+                _close(ctx, save=False)
+                raise mozilib.MoziError(
+                    f"{made['status']} from sandbar chat create")
+            cid = mozilib.parse_create_chat_id(made["text"].encode("utf-8"))
+            created = True
+            page.goto(mozilib.chat_page_url(chat_id=cid, company_id=company),
+                      wait_until="domcontentloaded")
+        body, used = mozilib.build_body(question, cid)
+        if created and used:
+            print(f"acqai: new portal chat {used[:8]}…",
+                  file=sys.stderr, flush=True)
+        elif cid:
+            print(f"acqai: continuing Mozi chat {cid[:8]}…",
+                  file=sys.stderr, flush=True)
+        else:
+            print("acqai: new Mozi chat…", file=sys.stderr, flush=True)
         print("acqai: posting to Mozi…", file=sys.stderr, flush=True)
         res = page.evaluate(_FETCH_JS, {"url": cfg["url"], "body": body})
         _close(ctx, save=True)
@@ -816,7 +860,7 @@ def send(question: str, *, chat_id: str | None = None,
             f"{res['status']} from the in-page send; the session may have "
             f"lapsed, run {mozilib.CMD} login")
     if res["status"] >= 400:
-        raise mozilib.MoziError(f"{res['status']} from /api/chat")
+        raise mozilib.MoziError(f"{res['status']} from chat send ({cfg['url']})")
     print("acqai: Mozi answered.", file=sys.stderr, flush=True)
     mozilib.save_chat_id(used)
     return mozilib.extract_answer(res["text"].encode("utf-8"), cfg), used

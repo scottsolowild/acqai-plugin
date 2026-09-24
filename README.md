@@ -51,7 +51,8 @@ it reloads `~/.claude/settings.json`.
 1. **Say "set up ACQ AI"** in a Claude Code chat (Desktop local, or
    `claude` in a terminal). Claude installs the browser it drives (a private
    copy in `~/.config/acqai`) and opens a sign-in window at
-   ai.acquisition.com.
+   portal.acquisition.com/advisor (the current ACQ AI). To use the older app
+   instead: set `MOZI_BASE=https://ai.acquisition.com` before login.
 2. **Sign in** in that window. Email code, as usual. If a company list
    shows, click yours. Send one short message there ("hi" is enough). The
    plugin learns the chat route from that message and closes the window.
@@ -141,9 +142,10 @@ on the other two yet. If you do, say how it went.
 clicked for you next time: `acqai.py setup --company "Your Company"`.
 
 **It says the route is not learned.** Run `login` again and send one message
-in the window. If that still does not take: in Chrome, open
-ai.acquisition.com/chat, open DevTools, Network, send any message, right-click
-the `chat` request, Copy, Copy as cURL, save it to a file, and run
+in the window. If that still does not take: in Chrome, open the app you use
+(portal.acquisition.com/advisor, or ai.acquisition.com/chat for legacy), open
+DevTools, Network, send any message, right-click the stream/`chat` request,
+Copy, Copy as cURL, save it to a file, and run
 `acqai.py discover --from-curl that-file`. The cookie in it is read and thrown
 away. Only the route is kept.
 
@@ -171,7 +173,7 @@ Config, all optional:
 | --- | --- | --- |
 | `ACQAI_STATE_DIR` | `~/.config/acqai` | The folder that holds the login, the route, the chat id, the venv, and the answers. |
 | `MOZI_COMPANY` | (saved by `setup --company`) | The company to click on the sign-in list. |
-| `MOZI_BASE` | `https://ai.acquisition.com` | The app's origin. |
+| `MOZI_BASE` | `https://portal.acquisition.com` | App origin. Portal is default. Legacy: `https://ai.acquisition.com`. Re-run `login` after switching. |
 | `MOZI_MIN_DELAY`, `MOZI_MAX_DELAY` | `12`, `30` | Seconds between sends, a random gap in that range. |
 | `MOZI_SEND_OK` | (unset) | `1` gives the yes for the whole shell. `-y` gives it for one send, which is the better habit. |
 | `MOZI_TOKEN` | (unset) | The `--http` path only: the whole Cookie header from a signed-in request. It expires in about a minute, which is why the browser path is the default. |

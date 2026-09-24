@@ -1,20 +1,24 @@
-"""The Mozi (ACQ AI, ai.acquisition.com) send seam: ask Hormozi's business AI
-one question and read its answer, through a paced, consent-gated, personal-use
-channel.
+"""The Mozi (ACQ AI) send seam: ask Hormozi's business AI one question and
+read its answer, through a paced, consent-gated, personal-use channel.
 
-Mozi offers no public API and no MCP (confirmed in the ACQ community). The app
-is Next.js on Vercel behind Clerk v5 auth, and the chat route lives inside its
-authed segment, so the reachable path is its own internal HTTP endpoint,
-called with a captured browser session, the way Hamel Husain's
-reverse-eng-site-skill and skoollib both work.
+Two apps are supported (one learned route at a time):
 
-AUTH IS CLERK, SO THE WHOLE COOKIE HEADER IS THE TOKEN. Clerk's bearer is the
-`__session` cookie, a JWT that expires ~60 seconds after it is minted and is
-refreshed constantly by the browser. A single cookie value goes stale within a
-minute, and Clerk prefers a publishable-key-suffixed twin plus `_client_uat`
-alongside it. So MOZI_TOKEN is the entire `Cookie:` header copied from a
-logged-in request, sent verbatim, and this is an interactive tool: capture it
-right before an ask, not for a schedule.
+  Portal (default)  https://portal.acquisition.com  UI /advisor
+                    Aegis cookies; POST /api/sandbar/chat then chat-stream
+  Legacy            https://ai.acquisition.com      UI /chat
+                    Clerk __session (~60s); POST /api/chat (AI SDK body)
+
+Set MOZI_BASE to pick which login opens. Re-run login (and send one message,
+or discover --from-curl) after switching so endpoint.json matches that app.
+
+Mozi offers no public API and no MCP (confirmed in the ACQ community). The
+reachable path is each app's own internal HTTP endpoint, called with a
+captured browser session, the way Hamel Husain's reverse-eng-site-skill and
+skoollib both work.
+
+AUTH IS THE WHOLE COOKIE HEADER (MOZI_TOKEN). Portal:
+`__Secure-aegis-external.session_token` + `session_data`. Legacy: Clerk
+`__session`. Prefer the browser transport: it refreshes the session itself.
 
 WHY THIS IS FENCED HARDER THAN THE READERS. Every other channel only reads.
 This one writes into a paid third-party account through an undocumented route,
@@ -24,8 +28,9 @@ paced, and it never sends without a per-run consent flag. It touches Mozi's own
 chat only, never the Skool community (that stays skoollib's job).
 
 Secrets, both the member's own browser session, never committed:
-  MOZI_TOKEN   the full Cookie header from a logged-in ai.acquisition.com request
-  MOZI_BASE    the app origin (default https://ai.acquisition.com)
+  MOZI_TOKEN   the full Cookie header from a logged-in request
+  MOZI_BASE    app origin (default https://portal.acquisition.com; legacy
+               https://ai.acquisition.com)
 The chat route and payload shape, learned by `discover` from a Copy-as-cURL of
 a real send, land in endpoint.json under STATE_DIR (review/mozi/ here,
 gitignored; the plugin's own folder elsewhere). No secret is ever
@@ -67,10 +72,14 @@ CHAT_ID_ENV = "MOZI_CHAT_ID"  # overrides the file for one process / nested send
 # public copy of the pair never tells a stranger to run ./acqai.sh.
 CMD = os.environ.get("ACQAI_CMD", "").strip() or "./acqai.sh"
 SETUP_CMD = os.environ.get("ACQAI_SETUP_CMD", "").strip() or "./setup.sh"
-DEFAULT_BASE = "https://ai.acquisition.com"
+PORTAL_BASE = "https://portal.acquisition.com"
+LEGACY_BASE = "https://ai.acquisition.com"
+DEFAULT_BASE = PORTAL_BASE
 USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
               "AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/126.0.0.0 Safari/537.36")
+# Portal Aegis session cookie (HTTP --http path). Browser transport preferred.
+_AEGIS_TOKEN = "__Secure-aegis-external.session_token"
 
 _last_request = 0.0
 
@@ -157,6 +166,31 @@ def base() -> str:
     return (os.environ.get("MOZI_BASE", "").strip() or DEFAULT_BASE).rstrip("/")
 
 
+def is_portal(origin: str | None = None) -> bool:
+    """True when the origin (or MOZI_BASE) is the ACQ portal, not legacy AI."""
+    host = (origin or base()).lower()
+    return "portal.acquisition.com" in host
+
+
+def page_path(origin: str | None = None) -> str:
+    """Chat UI path: /advisor on portal, /chat on legacy."""
+    return "/advisor" if is_portal(origin) else "/chat"
+
+
+def chat_page_url(*, chat_id: str | None = None,
+                  company_id: str | None = None,
+                  origin: str | None = None) -> str:
+    """The signed-in chat page, with optional portal query ids."""
+    root = (origin or base()).rstrip("/")
+    url = root + page_path(root)
+    q: list[str] = []
+    if chat_id:
+        q.append("chatId=" + chat_id)
+    if company_id:
+        q.append("companyId=" + company_id)
+    return url + (("?" + "&".join(q)) if q else "")
+
+
 def send_allowed() -> bool:
     """A send needs explicit per-run consent, since it writes to a third party."""
     return os.environ.get("MOZI_SEND_OK", "").strip() in {"1", "true", "yes"}
@@ -169,11 +203,22 @@ def _int_env(name: str, default: int, lo: int, hi: int) -> int:
         return default
 
 
+def has_session_cookie(header: str | None = None) -> bool:
+    """True when the Cookie header carries portal Aegis or legacy Clerk auth."""
+    h = header if header is not None else cookie_header()
+    if not h:
+        return False
+    if _AEGIS_TOKEN in h or "aegis-external.session_token=" in h:
+        return True
+    return bool(re.search(r"(?:^|;\s*)__session(?:_[A-Za-z0-9]+)?=", h))
+
+
 # --- token freshness: decode the __session JWT exp, warn when stale -----------
 def session_expiry() -> int | None:
-    """Seconds until the captured __session JWT expires (negative if already
-    expired), or None if no __session is present or it can't be read. Clerk
-    session tokens live ~60s, so this catches a stale paste before a send."""
+    """Seconds until the captured Clerk __session JWT expires (negative if
+    already expired), or None when absent / unreadable / Aegis-only. Clerk
+    tokens live ~60s; Aegis has no readable exp here, so the browser path is
+    the safe default on portal."""
     header = cookie_header()
     m = re.search(r"__session(?:_[A-Za-z0-9]+)?=([^;]+)", header)
     if not m:
@@ -206,17 +251,22 @@ def _pace() -> None:
 
 def _request(method: str, url: str, *, body: bytes | None = None,
              content_type: str = "application/json",
-             timeout: int = 90) -> tuple[int, bytes]:
+             timeout: int = 90,
+             referer: str | None = None) -> tuple[int, bytes]:
     header = cookie_header()
     if not header:
-        raise MoziError("MOZI_TOKEN not set (the whole Cookie header from a "
-                        "logged-in ai.acquisition.com request, exported in "
-                        "the shell or set in .env)")
+        raise MoziError(
+            "MOZI_TOKEN not set (the whole Cookie header from a logged-in "
+            f"{base()} request, exported in the shell or set in .env)")
+    if not has_session_cookie(header):
+        raise MoziError(
+            "MOZI_TOKEN has no Aegis or Clerk session cookie "
+            f"({_AEGIS_TOKEN} or __session)")
     headers = {"User-Agent": USER_AGENT, "Cookie": header,
-               "Origin": base(), "Referer": base() + "/chat",
+               "Origin": base(),
+               "Referer": referer or chat_page_url(),
                "Accept": "text/event-stream, application/json, text/plain"}
-    # ai.acquisition.com's /api/chat checks an x-ui-nonce header that mirrors
-    # the acq_ui_nonce cookie; derive it so no stale nonce is stored.
+    # Legacy /api/chat checks x-ui-nonce mirroring acq_ui_nonce; portal does not.
     nonce = re.search(r"acq_ui_nonce=([^;]+)", header)
     if nonce:
         headers["x-ui-nonce"] = nonce.group(1)
@@ -275,9 +325,9 @@ def _set_message(body: object, slot: str, question: str,
                  chat_id: str | None = None) -> object:
     body = json.loads(json.dumps(body))  # deep copy
     if slot == "message.aisdk":
-        # AI SDK useChat body: one `message` object. Set its text and give the
-        # message a fresh id + timestamp. The chat `id` is the conversation:
-        # reuse chat_id to continue a dialogue, or mint a new one per ask.
+        # Legacy AI SDK useChat body: one `message` object. Set its text and
+        # give the message a fresh id + timestamp. The chat `id` is the
+        # conversation: reuse chat_id to continue, or mint a new one per ask.
         m = body["message"]
         m["content"] = question
         text_parts = [p for p in m.get("parts", [])
@@ -296,11 +346,37 @@ def _set_message(body: object, slot: str, question: str,
             body["id"] = chat_id or str(uuid.uuid4())
         return body
     if slot.startswith("messages[-1]."):
+        # Portal sandbar chat-stream: one user message in `messages`, ids in
+        # toolContext.chatId / newMessageId / messageId, plus requestId.
         field = slot.split(".", 1)[1]
-        body["messages"][-1][field] = question
+        msg = body["messages"][-1]
+        msg[field] = question
+        new_id = str(uuid.uuid4())
+        if isinstance(msg, dict):
+            msg["id"] = new_id
+        if "requestId" in body:
+            body["requestId"] = str(uuid.uuid4())
+        if "clientLocalTime" in body:
+            body["clientLocalTime"] = _now_iso()
+        tc = body.get("toolContext")
+        if isinstance(tc, dict):
+            cid = chat_id or tc.get("chatId") or str(uuid.uuid4())
+            tc["chatId"] = cid
+            tc["newMessageId"] = new_id
+            tc["messageId"] = str(uuid.uuid4())
         return body
     body[slot] = question
     return body
+
+
+def _chat_id_of(body: object) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    tc = body.get("toolContext")
+    if isinstance(tc, dict) and tc.get("chatId"):
+        return str(tc["chatId"])
+    cid = body.get("id")
+    return str(cid) if cid else None
 
 
 def build_body(question: str, chat_id: str | None = None) -> tuple[object, str | None]:
@@ -316,16 +392,100 @@ def build_body(question: str, chat_id: str | None = None) -> tuple[object, str |
                         f'"message_slot" to {ENDPOINT_FILE} by hand')
     else:
         body = {"message": question}
-    cid = body.get("id") if isinstance(body, dict) else None
-    return body, cid
+    return body, _chat_id_of(body)
+
+
+def is_sandbar(cfg: dict | None = None) -> bool:
+    """True when the learned route is portal sandbar chat-stream."""
+    cfg = cfg if cfg is not None else (endpoint() or {})
+    url = (cfg.get("url") or "").lower()
+    return "sandbar" in url and "chat-stream" in url
+
+
+def create_url(cfg: dict | None = None) -> str | None:
+    """POST URL that creates a sandbar chat, or None on legacy."""
+    cfg = cfg if cfg is not None else (endpoint() or {})
+    if cfg.get("create_url"):
+        return str(cfg["create_url"])
+    url = (cfg.get("url") or "").rstrip("/")
+    if url.endswith("chat-stream"):
+        return url[: -len("chat-stream")] + "chat"
+    return None
+
+
+def company_id_from_endpoint(cfg: dict | None = None) -> str | None:
+    cfg = cfg if cfg is not None else (endpoint() or {})
+    body = cfg.get("body_template")
+    if not isinstance(body, dict):
+        return None
+    tc = body.get("toolContext")
+    if isinstance(tc, dict):
+        for key in ("clientServiceCompanyId", "companyId"):
+            val = tc.get(key)
+            if val:
+                return str(val)
+    return None
+
+
+def _title_from(question: str) -> str:
+    line = (question or "").strip().splitlines()[0] if question else ""
+    line = re.sub(r"\s+", " ", line).strip()
+    return (line[:80] if line else "Chat")
+
+
+def create_chat_body(title: str, cfg: dict | None = None) -> dict:
+    """JSON body for POST /api/sandbar/chat."""
+    cfg = cfg if cfg is not None else (endpoint() or {})
+    body: dict = {"title": _title_from(title)}
+    company = company_id_from_endpoint(cfg)
+    if company:
+        body["clientServiceCompanyId"] = company
+    return body
+
+
+def parse_create_chat_id(raw: bytes) -> str:
+    try:
+        data = json.loads(raw.decode("utf-8", errors="replace"))
+    except ValueError as err:
+        raise MoziError(f"create chat returned non-JSON: {raw[:200]!r}") from err
+    if not isinstance(data, dict):
+        raise MoziError(f"create chat returned a non-object: {raw[:200]!r}")
+    cid = data.get("id") or data.get("chatId")
+    if not cid:
+        raise MoziError(f"create chat returned no id: {raw[:200]!r}")
+    return str(cid)
+
+
+def create_chat(title: str, *, timeout: int = 60) -> str:
+    """HTTP: create a portal sandbar chat and return its id."""
+    cfg = endpoint() or {}
+    url = create_url(cfg)
+    if not url:
+        raise MoziError("no sandbar create URL (learned route is not chat-stream)")
+    body = create_chat_body(title, cfg)
+    _status, raw = _request("POST", url, body=json.dumps(body).encode("utf-8"),
+                            timeout=timeout)
+    return parse_create_chat_id(raw)
+
+
+def _with_create_url(cfg: dict) -> dict:
+    """Attach create_url when learning a sandbar stream route."""
+    out = dict(cfg)
+    if not out.get("create_url"):
+        derived = create_url(out)
+        if derived:
+            out["create_url"] = derived
+    return out
 
 
 def parse_curl(text: str) -> dict:
     """Learn the chat endpoint from a Copy-as-cURL blob: url, method, JSON body
     template, and where the message slots in. The cookie is read but never
     stored (it's the live secret; it belongs in MOZI_TOKEN)."""
-    # URL: the first http(s) token, quoted or bare.
+    # URL: the first http(s) token, quoted or bare (--url FORM included).
     m = re.search(r"""curl\s+(?:-[A-Za-z-]+\s+)*['"]?(https?://[^'"\s]+)""", text)
+    if not m:
+        m = re.search(r"""--url\s+['"]?(https?://[^'"\s]+)""", text)
     if not m:
         m = re.search(r"""['"](https?://[^'"\s]+)['"]""", text)
     if not m:
@@ -351,22 +511,34 @@ def parse_curl(text: str) -> dict:
             body_template = None
         if method == "POST" and not xm and body_template is None:
             method = "POST"
-    stream = "text/event-stream" in text or "/api/chat" in url
-    return {"url": url, "method": method, "body_template": body_template,
-            "message_slot": message_slot, "stream": stream}
+    stream = ("text/event-stream" in text or "/api/chat" in url
+              or "chat-stream" in url)
+    return _with_create_url({
+        "url": url, "method": method, "body_template": body_template,
+        "message_slot": message_slot, "stream": stream,
+    })
 
 
 def learn_from_request(url: str, method: str, post_data: "str | None") -> "dict | None":
     """The route config from one request the app made itself: the POST that
     carries a chat message. login listens for it, so a member who sends one
     message in the window has taught the transport the route with no cURL to
-    copy. A GET, another path, or a body with no message slot is None."""
+    copy. A GET, another path, or a body with no message slot is None.
+
+    Accepts legacy /api/chat and portal /api/sandbar/chat-stream. Skips
+    /api/sandbar/chat (create-only; no message slot)."""
     if (method or "").upper() != "POST" or not post_data:
         return None
     clean = (url or "").split("?", 1)[0]
     path = clean.lower()
-    if "/api/" not in path or "chat" not in path.rsplit("/", 1)[-1]:
+    if "/api/" not in path:
         return None
+    leaf = path.rsplit("/", 1)[-1]
+    # chat-stream (portal) or chat (legacy /api/chat). Not chat-list, etc.
+    if leaf not in ("chat", "chat-stream") and "chat-stream" not in leaf:
+        return None
+    if leaf == "chat" and "/sandbar/" in path:
+        return None  # create-or-get, no user message
     try:
         body = json.loads(post_data)
     except ValueError:
@@ -374,43 +546,55 @@ def learn_from_request(url: str, method: str, post_data: "str | None") -> "dict 
     slot = _find_message_slot(body)
     if not slot:
         return None
-    return {"url": clean, "method": "POST", "body_template": body,
-            "message_slot": slot, "stream": True}
+    return _with_create_url({
+        "url": clean, "method": "POST", "body_template": body,
+        "message_slot": slot, "stream": True,
+    })
 
 
 def save_endpoint(cfg: dict) -> Path:
     ENDPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    cfg = _with_create_url(cfg)
     safe = {k: cfg.get(k) for k in
-            ("url", "method", "body_template", "message_slot", "stream", "answer_path")}
+            ("url", "method", "body_template", "message_slot", "stream",
+             "answer_path", "create_url")}
     ENDPOINT_FILE.write_text(json.dumps(safe, indent=2) + "\n", encoding="utf-8")
     return ENDPOINT_FILE
 
 
-# --- response parsing: JSON, SSE, or Vercel AI SDK data stream ----------------
+# --- response parsing: JSON, SSE, NDJSON, or Vercel AI SDK data stream --------
 def extract_answer(raw: bytes, cfg: dict) -> str:
     text = raw.decode("utf-8", errors="replace").strip()
-    # Vercel AI SDK data-stream lines: 0:"chunk"  (text parts)
+    # Vercel AI SDK data-stream lines: 0:"chunk"  (legacy text parts)
     ai_parts = re.findall(r'^0:"((?:[^"\\]|\\.)*)"', text, re.M)
     if ai_parts:
         return "".join(json.loads(f'"{p}"') for p in ai_parts).strip()
-    # SSE: concatenate data: payloads, pulling text out of JSON chunks.
-    if "data:" in text:
-        out = []
-        for line in text.splitlines():
-            line = line.strip()
-            if not line.startswith("data:"):
-                continue
-            payload = line[5:].strip()
-            if payload in ("", "[DONE]"):
-                continue
-            try:
-                obj = json.loads(payload)
-                out.append(_dig_text(obj))
-            except ValueError:
-                out.append(payload)
-        joined = "".join(p for p in out if p).strip()
-        if joined:
-            return joined
+    # Portal sandbar / SSE: accumulate delta fields from JSON lines.
+    deltas: list[str] = []
+    chunks: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            line = line[5:].strip()
+        if line in ("", "[DONE]"):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        d = obj.get("delta")
+        if isinstance(d, str) and d:
+            deltas.append(d)
+            continue
+        dug = _dig_text(obj)
+        if dug:
+            chunks.append(dug)
+    if deltas:
+        return "".join(deltas).strip()
+    if chunks:
+        return "".join(chunks).strip()
     # Plain JSON.
     try:
         data = json.loads(text)
@@ -442,8 +626,9 @@ def ask(question: str, *, chat_id: str | None = None,
         timeout: int = 120) -> tuple[str, str | None]:
     """Send one question to Mozi and return (answer, chat_id). Reuses the
     saved conversation unless chat_id is passed (or cleared via clear_chat_id /
-    --new). Refuses without the per-run consent flag or a discovered endpoint,
-    and never guesses a route."""
+    --new). Portal sandbar creates a chat first when none is saved. Refuses
+    without the per-run consent flag or a discovered endpoint, and never
+    guesses a route."""
     if not send_allowed():
         raise MoziConsent(
             "a Mozi send writes to your paid account through an undocumented "
@@ -461,16 +646,26 @@ def ask(question: str, *, chat_id: str | None = None,
             "live ~60s, so grab a fresh cookie right before the ask (or use the "
             "browser transport, which never races the token)")
     cid = chat_id if chat_id is not None else load_chat_id()
+    created = False
+    if not cid and is_sandbar(cfg):
+        print("acqai: creating portal chat…", file=sys.stderr, flush=True)
+        cid = create_chat(question, timeout=min(60, timeout))
+        created = True
     payload, used = build_body(question, cid)
-    if cid:
+    if created and used:
+        print(f"acqai: new portal chat {used[:8]}…",
+              file=sys.stderr, flush=True)
+    elif cid:
         print(f"acqai: continuing Mozi chat {cid[:8]}…",
               file=sys.stderr, flush=True)
     else:
         print("acqai: new Mozi chat…", file=sys.stderr, flush=True)
+    company = company_id_from_endpoint(cfg)
+    referer = chat_page_url(chat_id=used or cid, company_id=company)
     print("acqai: posting to Mozi…", file=sys.stderr, flush=True)
-    status, raw = _request(cfg.get("method", "POST"), cfg["url"],
-                           body=json.dumps(payload).encode("utf-8"),
-                           timeout=timeout)
+    _status, raw = _request(cfg.get("method", "POST"), cfg["url"],
+                            body=json.dumps(payload).encode("utf-8"),
+                            timeout=timeout, referer=referer)
     print("acqai: Mozi answered.", file=sys.stderr, flush=True)
     save_chat_id(used)
     return extract_answer(raw, cfg), used
