@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.6.0] - 2026-09-25
+
+### Added
+- /acq alone gets ready, and every ask runs the same check first (7a15df7)
+  `/acq` with no task is now the readiness run. A new `ready` command checks what a send needs, in order, and fixes what it can: it runs `setup` when Playwright is missing, opens the sign-in window when no login is saved or the saved session has expired (a headless check first), then confirms the route and the chat the next send would continue, and ends with the state of things and `ready`. An ask runs the same check before the question is shaped. `ready --dry-run` names the steps and runs nothing, browser included.
+
 ## [0.5.2] - 2026-09-24
 
 ### Fixed
