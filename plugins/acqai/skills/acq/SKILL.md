@@ -6,10 +6,10 @@ description: >
   show it, send it through the bundled script on their yes, refine the answer
   with follow-up questions, and bring the mechanics home with the edits they
   imply. A bare "/acq" is the readiness check alone. Pass -y or --yes on /acq
-  to run the full loop on one yes (first send and follow-ups) without asking
-  again between sends. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this
-  past ACQ", "what would ACQ say", "set up ACQ AI", "sign into ACQ AI", or a
-  pasted ACQ AI reply to sort through.
+  to treat that flag as the yes for the whole loop (first send and follow-ups)
+  and send without waiting for another yes in chat. Trigger on "/acq", "ask
+  ACQ", "ask ACQ AI", "run this past ACQ", "what would ACQ say", "set up ACQ
+  AI", "sign into ACQ AI", or a pasted ACQ AI reply to sort through.
 ---
 
 # acq
@@ -17,7 +17,7 @@ description: >
 ACQ AI advises. The person decides. This skill runs the loop: the question,
 the send, the follow-ups, the result. The script is
 `${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py`. Every send goes through it, and every
-send needs the person's yes for that run.
+send needs the person's yes for that run. On `/acq -y`, the flag is that yes.
 
 ## Get ready: every run starts here, and a bare `/acq` is only this
 
@@ -42,8 +42,8 @@ go on to the loop once `ready` exits 0.
 
 ## Two ways to run
 
-- **`/acq <task>`** — step by step. After `ready`, show each question, wait for yes, send with `-y`, then ask again before each follow-up.
-- **`/acq -y <task>`** (or `--yes`) — one yes for the whole loop. After `ready`, show the first question and the docs that ride with it. Wait for their yes once. Then send that question and up to two follow-ups with `-y` on each `send`, without asking again between them. Say up front that this run will send the first question and the follow-ups on that one yes. Cap follow-ups at two. Report when the loop ends.
+- **`/acq <task>`** — step by step. After `ready`, show each question, wait for yes in chat, send with `-y`, then ask again before each follow-up.
+- **`/acq -y <task>`** (or `--yes`) — the flag is the yes. After `ready`, show the first question and the docs that ride with it so they can see what goes out, then send that question and up to two follow-ups with `-y` on each `send` without waiting for another yes in chat. Do not ask "Send it?" or "Reply yes." Say up front that `-y` already covered this run. Cap follow-ups at two. Report when the loop ends.
 
 `-y` / `--yes` may sit anywhere in the arguments. Strip them from the task text before you interpret it. With no task left after stripping, run `ready` and stop (same as a bare `/acq`).
 
@@ -55,15 +55,15 @@ go on to the loop once `ready` exits 0.
 
    What stays home: client names, call transcripts, anything the person calls private, and anything you would hesitate to read aloud to a stranger. When in doubt, ask before you include it. Names the person wants kept out every time go on a list the script checks, one `names add "Jane Doe"` each. When a question includes one of them, the send stops before it goes out.
 
-3. **Show, then send.** Write the question to a temp file (an argv cannot carry a long paste). Run the send with `--dry-run` first. It exits 1 when a line says NOT ready, such as a private name or a chat from the other app, so fix that before anything else. Show the person what is about to go out: the question and the list of docs riding with it. Wait for their yes. Then:
+3. **Show, then send.** Write the question to a temp file (an argv cannot carry a long paste). Run the send with `--dry-run` first. It exits 1 when a line says NOT ready, such as a private name or a chat from the other app, so fix that before anything else. Show the person what is about to go out: the question and the list of docs riding with it. On a step-by-step run, wait for their yes in chat. On `/acq -y`, the flag already is that yes: do not wait, send next. Then:
 
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" send --file /tmp/acq-question.md -y
    ```
 
-   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation.
+   The `-y` on `send` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation.
 
-   On a step-by-step run, wait for a yes before each follow-up send. On `/acq -y`, after the first yes, write each follow-up to a temp file, dry-run it, then send with `-y` without asking again. Still dry-run every send so a NOT ready line stops the loop.
+   On a step-by-step run, wait for a yes before each follow-up send. On `/acq -y`, do not wait: after the show, send the first question with `-y`, then write each follow-up to a temp file, dry-run it, and send with `-y`. Still dry-run every send so a NOT ready line stops the loop.
 
    Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`. Give each follow-up its reason in one line with `--why "…"`, and the file keeps it above the message.
 
@@ -80,7 +80,7 @@ Stop and say why, with the fix the script named: `login` for a profile that is n
 
 ## Guards
 
-- Nothing sends without a yes. On `/acq <task>`, that is one yes per send. On `/acq -y <task>`, that is one yes for the run: the first question and its follow-ups. `-y` on each `send` is that yes, carried to the script.
-- One question at a time on the wire. The script paces itself. A step-by-step run is a series of yeses; a `-y` run is one yes and a short chain.
+- Nothing sends without a yes. On `/acq <task>`, that is one yes in chat per send. On `/acq -y <task>`, the `-y` on the command is the yes for the run (first question and follow-ups); do not ask again in chat. `-y` on each `send` carries that consent to the script.
+- One question at a time on the wire. The script paces itself. A step-by-step run is a series of chat yeses; a `-y` run is the flag as yes and a short chain.
 - The script reaches ACQ AI's chat and nothing else. It never posts to the community.
 - The person's account is theirs. The tool does what they would do by hand, in their own browser, for their own use.
