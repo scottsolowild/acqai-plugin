@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.8.0] - 2026-09-25
+
+### Added
+- /acq -y writes Adopt edits with no further ask (062694c)
+  The flag covers the sends and the file changes. When the loop ends, write every Adopt change (new offer or page when the task calls for one), record the outcome, and stop. Step-by-step /acq still waits before editing.
+
 ## [0.7.1] - 2026-09-25
 
 ### Fixed
