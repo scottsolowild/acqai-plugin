@@ -1,9 +1,14 @@
 ---
-description: Ask ACQ AI a question with your docs as the context, or set it up.
+description: Get ready for ACQ AI (sign in when needed), or ask it a question with your docs as the context.
 ---
 
-Run the acq skill. Ask ACQ AI (Mozi) from here, with the person's own docs as
-the context:
+Run the acq skill. With no task, this run is the readiness check alone: run
+`ready`, which checks Playwright, the login, the route, and the chat the next
+send would continue, fixes what it can (setup, the sign-in window), and says
+what is next. Show the person the result and stop.
+
+With a task, `ready` runs first, then the loop. Ask ACQ AI (Mozi) from here,
+with the person's own docs as the context:
 
 - Shape the task into one question ACQ AI can answer with mechanics.
 - Show the person what is about to go out, and wait for their yes.

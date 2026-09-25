@@ -65,6 +65,19 @@ jobs:
         run: python3 plugins/acqai/scripts/acqai.py --help
       - name: A dry run sends nothing and needs no yes
         run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai" python3 plugins/acqai/scripts/acqai.py send "hello" --dry-run | grep -q "nothing sent"
+      # A fresh state dir holds no login: the ready dry run names it, exits
+      # 1, and opens no browser and makes no venv.
+      - name: A ready dry run names the login and runs nothing
+        run: |
+          state="$RUNNER_TEMP/acqai-ready"
+          set +e
+          out=$(ACQAI_STATE_DIR="$state" python3 plugins/acqai/scripts/acqai.py ready --dry-run 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          test "$code" -eq 1
+          grep -q "login: no login saved yet" <<<"$out"
+          test ! -e "$state/venv"
       # No yes on the command, no terminal to ask at: the send stops with
       # exit 3 before it touches the transport.
       - name: A send with no yes and no terminal stops before the transport

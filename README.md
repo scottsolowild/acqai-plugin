@@ -48,9 +48,10 @@ it reloads `~/.claude/settings.json`.
 
 ## After install (once, a few minutes)
 
-1. **Say "set up ACQ AI"** in a Claude Code chat (Desktop local, or
-   `claude` in a terminal). Claude installs the browser it drives (a private
-   copy in `~/.config/acqai`) and opens a sign-in window at
+1. **Type `/acq`** in a Claude Code chat (Desktop local, or `claude` in a
+   terminal), or say "set up ACQ AI". On its own, `/acq` gets you ready:
+   Claude installs the browser it drives (a private copy in
+   `~/.config/acqai`) and opens a sign-in window at
    portal.acquisition.com/advisor.
 2. **Sign in** in that window. Email code, as usual. If a company list
    shows, click yours. Send one short message there ("hi" is enough). The
@@ -74,6 +75,7 @@ claude -p "ask ACQ AI what it would change first about my offer"
 
 Say what you want in plain English:
 
+- `/acq` on its own: get ready. It checks you are signed in, opens the sign-in window when you are not, and says what is next. Every ask runs the same check first.
 - "ask ACQ AI to price this offer" (with the offer doc open or named)
 - "run my landing page past ACQ AI and tell me what it would change"
 - "what would ACQ AI say about this funnel? here are the numbers"
@@ -167,6 +169,7 @@ of this repo:
 python3 plugins/acqai/scripts/acqai.py setup --company "Your Company"
 python3 plugins/acqai/scripts/acqai.py login
 python3 plugins/acqai/scripts/acqai.py probe
+python3 plugins/acqai/scripts/acqai.py ready
 python3 plugins/acqai/scripts/acqai.py send "What would you change first about this offer?"
 python3 plugins/acqai/scripts/acqai.py send --file question.md -y
 python3 plugins/acqai/scripts/acqai.py send "Go deeper on point two."
@@ -178,7 +181,10 @@ python3 plugins/acqai/scripts/acqai.py outcome 2026-09-23-2209 --answer "- Lead 
 python3 plugins/acqai/scripts/acqai.py answers --regroup --dry-run
 ```
 
-`send` asks y/N before it sends. `-y` answers it. `--dry-run` shows what would
+`ready` checks what a send needs and fixes what it can: `setup` when
+Playwright is missing, the sign-in window when the login is out, then the
+route and the chat the next send continues. `--dry-run` names the steps and
+runs nothing. `send` asks y/N before it sends. `-y` answers it. `--dry-run` shows what would
 go out and sends nothing, and it exits 1 when a line says NOT ready. `--new`
 starts a fresh conversation, and `--continue` goes back to the one an answer on
 file used. `--why` keeps a follow-up's reason above it in that file. `--paste`
