@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.6.1] - 2026-09-25
+
+### Fixed
+- End a portal reply where the portal's own chat page ends it (c24c3e6)
+  send now reads a portal reply the way ACQ AI's own chat page does. A reply that stops on an error, or that ends before it finished, fails with the part it got kept on file, even when the error comes before any reply text. A reply that arrives whole in its closing event, with nothing streamed before it, comes through instead of failing as empty.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added
