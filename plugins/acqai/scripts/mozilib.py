@@ -112,20 +112,18 @@ class MoziChatElsewhere(MoziError):
 
 
 class MoziCutShort(MoziError):
-    """The stream sent part of a reply and then an error. The send fails, and
-    the reply text from before the error rides on `partial`, so a caller can
-    keep it on the record."""
+    """The stream sent part of a reply, then an error or no closing event.
+    The send fails, and the reply text it did send rides on `partial`, so a
+    caller can keep it on the record. `reason` is one sentence."""
 
     def __init__(self, reason: str, partial: str) -> None:
-        super().__init__("Mozi's stream stopped with an error partway "
-                         f"through the reply: {reason}")
+        super().__init__(f"Mozi's reply stopped partway. {reason}")
         self.reason = reason
         self.partial = partial
 
     def logged(self) -> str:
         """The partial reply as a log keeps it, marked where it stopped."""
-        return (f"{self.partial}\n\n*(Cut short here. Mozi's stream sent an "
-                f"error: {self.reason})*")
+        return f"{self.partial}\n\n*(Cut short here. {self.reason})*"
 
 
 def load_chat_id() -> str | None:
@@ -758,12 +756,85 @@ def _event_text(event: dict) -> str:
 
 
 def _error_reason(event: dict) -> str:
-    """The reason an error event gives, on one line, or ""."""
+    """The reason an error event gives, on one line, or "": its errorText,
+    message, or error string, else the message of an error object."""
     for key in ("errorText", "message", "error"):
         val = event.get(key)
         if isinstance(val, str) and val.strip():
             return " ".join(val.split())[:200]
+    err = event.get("error")
+    msg = err.get("message") if isinstance(err, dict) else None
+    return " ".join(msg.split())[:200] if isinstance(msg, str) else ""
+
+
+# The finish reasons the portal's reader takes as the end of a reply.
+_FINISH_REASONS = ("stop", "length", "content-filter", "error", "other",
+                   "abort")
+_CLOSING_TYPES = ("finish", "error", "response.completed", "response.error")
+
+
+def _closes(event: dict) -> bool:
+    """True for the event the portal's reader stops at: a closing type, or a
+    finish reason it knows. A response that completed to call tools goes on."""
+    reason = event.get("finishReason")
+    reason = reason if isinstance(reason, str) else ""
+    if event.get("type") == "response.completed" and reason == "tool-calls":
+        return False
+    return reason in _FINISH_REASONS or event.get("type") in _CLOSING_TYPES
+
+
+def _closed_on_error(event: dict) -> bool:
+    """True when a closing event ends the reply on an error, the way the
+    portal's reader resolves it: its finish reason, else the error types,
+    or an error event that says what went wrong."""
+    reason = event.get("finishReason")
+    if not (isinstance(reason, str) and reason in _FINISH_REASONS):
+        reason = ("error" if event.get("type") in ("error", "response.error")
+                  else "stop")
+    return reason == "error" or bool(
+        event.get("type") == "error" and _error_reason(event))
+
+
+def _sent_error(why: str) -> str:
+    """One sentence on an error the stream sent, with its reason if any."""
+    return (f"The stream sent an error: {why.rstrip('.!?')}." if why
+            else "The stream sent an error and gave no reason.")
+
+
+def _error_sentence(event: dict) -> str:
+    """One sentence on the error a closing event carries."""
+    why = _error_reason(event)
+    if why or event.get("type") == "error":
+        return _sent_error(why)
+    return "The stream finished on an error."
+
+
+def _content_text(value: object) -> str:
+    """Text from a message's content or parts: a string, a text object, or a
+    list of text parts."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("text"), str):
+        return value["text"]
+    if isinstance(value, list):
+        return "".join(p["text"] for p in value if isinstance(p, dict)
+                       and p.get("type") == "text"
+                       and isinstance(p.get("text"), str))
     return ""
+
+
+def _closing_text(event: dict) -> str:
+    """The whole reply a closing event can carry: its own text, else its
+    responseMessage's content or parts. The portal's page shows it only when
+    no reply text streamed before it."""
+    text = event.get("text")
+    if isinstance(text, str) and text:
+        return text
+    message = event.get("responseMessage")
+    if not isinstance(message, dict):
+        return ""
+    return (_content_text(message.get("content"))
+            or _content_text(message.get("parts")))
 
 
 def _no_reply(events: list[dict]) -> str:
@@ -780,25 +851,37 @@ def _no_reply(events: list[dict]) -> str:
 
 
 def _typed_answer(events: list[dict]) -> str:
-    """The reply a typed stream carries, read in stream order the way the
-    portal's reader reads it. Raises when there is no reply text, and when an
-    error event arrived after some of it."""
+    """The reply a typed stream carries, read the way the portal's chat page
+    reads its sandbar stream. Text comes from each event in order, up to the
+    first closing event, and nothing after it counts. When nothing streamed,
+    the closing event's own text is the reply. The read raises when the
+    reply closes on an error, when no closing event came, and when there is
+    no reply text. Returning the part would let the send exit 0 and file it
+    as the whole answer, so a part rides on MoziCutShort and the log keeps
+    it."""
     parts: list[str] = []
-    cut = ""
-    for event in events:
-        if event.get("type") == "error" and not cut and "".join(parts).strip():
-            cut = _error_reason(event) or "the error event gave no reason"
+    for n, event in enumerate(events):
         parts.append(_event_text(event))
-    answer = "".join(parts).strip()
-    if not answer:
+        if not _closes(event):
+            continue
+        answer = "".join(parts).strip() or _closing_text(event).strip()
+        if _closed_on_error(event):
+            if answer:
+                raise MoziCutShort(_error_sentence(event), answer)
+            why = _error_reason(event)
+            raise MoziError("Mozi's stream carried an error and no reply: "
+                            + why if why else _no_reply(events[:n + 1]))
+        if answer:
+            return answer
         # Returning "" would let the send exit 0 as a sent ask, and taking
         # every `delta` would put the reasoning back in the answer.
-        raise MoziError(_no_reply(events))
-    if cut:
-        # Returning the part would let the send exit 0 and file it as the
-        # whole answer. The part rides on the error, so the log keeps it.
-        raise MoziCutShort(cut, answer)
-    return answer
+        raise MoziError(_no_reply(events[:n + 1]))
+    # The page reads a stream that stops before a closing event as a reply
+    # that was interrupted.
+    answer = "".join(parts).strip()
+    if answer:
+        raise MoziCutShort("The stream ended before it finished.", answer)
+    raise MoziError(_no_reply(events))
 
 
 # One line of an AI SDK data stream, the older app's: a one-character type, a
@@ -808,12 +891,11 @@ _DATA_PART = re.compile(r"^([0-9a-z]):(.+)$")
 
 def _data_stream_answer(text: str) -> str | None:
     """The reply an AI SDK data stream carries, read in stream order, or None
-    when the text holds no text part and no error part. Raises when an error
-    part arrived after some reply text, and when one came with no reply text
-    at all, the rule the portal's typed stream reads by."""
+    when the text holds no text part and no error part. The first error part
+    ends the read, the way the AI SDK's own reader throws on one: after some
+    reply text it raises MoziCutShort, and with none it raises MoziError."""
     parts: list[str] = []
     seen = False
-    cut = why = ""
     for line in text.splitlines():
         m = _DATA_PART.match(line.strip())
         if not m or m.group(1) not in ("0", "3"):
@@ -828,19 +910,13 @@ def _data_stream_answer(text: str) -> str | None:
         if m.group(1) == "0":
             parts.append(val)
             continue
-        reason = " ".join(val.split())[:200] or "the error part gave no reason"
-        if "".join(parts).strip():
-            cut = cut or reason
-        else:
-            why = why or reason
-    if not seen:
-        return None
-    answer = "".join(parts).strip()
-    if cut:
-        raise MoziCutShort(cut, answer)
-    if why and not answer:
-        raise MoziError("Mozi's stream carried an error and no reply: " + why)
-    return answer
+        why = " ".join(val.split())[:200]
+        answer = "".join(parts).strip()
+        if answer:
+            raise MoziCutShort(_sent_error(why), answer)
+        raise MoziError("Mozi's stream carried an error and no reply: "
+                        + (why or "the error part gave no reason"))
+    return "".join(parts).strip() if seen else None
 
 
 def extract_answer(raw: bytes, cfg: dict) -> str:

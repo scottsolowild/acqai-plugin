@@ -109,7 +109,8 @@ class PortalPage:
         self.fetches: list[tuple[str, str | None]] = []
         self.replies = {
             CREATE: (200, json.dumps({"id": NEW_CHAT})),
-            STREAM: (200, 'data: {"type":"text-delta","delta":"The answer"}'),
+            STREAM: (200, 'data: {"type":"text-delta","delta":"The answer"}\n\n'
+                            'data: {"type":"finish","finishReason":"stop"}'),
         }
 
     def pick(self, name):

@@ -7,13 +7,21 @@ word) logged a reasoning paragraph with "received" glued to its end. A typed
 stream now reads the way the portal's own reader does, and one that carries
 no reply text raises instead of answering with nothing or with the reasoning.
 
-extract_answer also raises when a stream sends part of a reply and then an
-error. It had returned the part as a whole answer, so the send exited 0.
-The error it raises now, MoziCutShort, carries the part, so a caller can
-keep it on the record while the send fails. The older app's data stream
-reads by the same rule: its 3: error part after 0: text raises MoziCutShort,
-and one with no text raises MoziError with its reason, where the raw stream
-had come back as the answer.
+extract_answer also raises when a reply stops partway. It had returned the
+part as a whole answer, so the send exited 0. The error it raises now,
+MoziCutShort, carries the part, so a caller can keep it on the record while
+the send fails.
+
+Where a reply ends follows the portal's chat page, as its client bundle
+reads the sandbar stream (read 2026-09-25). The read stops at the first
+closing event, and nothing after it counts. When nothing streamed, the
+closing event's own text is the reply. A close on an error event, on
+response.error, or with finishReason "error" fails the reply, and a stream
+with no closing event is one the page calls interrupted. The page adds and
+clears nothing for text-reset there, and it takes a textDelta string on any
+event. The older app's data stream stops at its first 3: error part: after
+0: text it raises MoziCutShort, and with none it raises MoziError with its
+reason, where the raw stream had come back as the answer.
 
 This file is shared byte for byte with the acqai plugin repo's tests/, so
 it imports only the transport pair.
@@ -143,13 +151,79 @@ class CutShort(unittest.TestCase):
     def test_the_older_apps_error_part_with_no_text_names_its_reason(self):
         raw = (b'f:{"messageId":"m1"}\n'
                b'g:"thinking it through"\n'
-               b'3:"The model is overloaded."\n')
+               b'3:"The model is overloaded."\n'
+               b'0:"never read"\n')
         with self.assertRaises(mozilib.MoziError) as caught:
             mozilib.extract_answer(raw, {})
         err = caught.exception
         self.assertNotIsInstance(err, mozilib.MoziCutShort)
         self.assertIn(OVERLOADED, str(err))
         self.assertNotIn("thinking", str(err))
+
+
+class WhereTheReplyEnds(unittest.TestCase):
+    """The first closing event ends the read, the way the portal's page reads
+    its sandbar stream."""
+
+    def test_nothing_after_the_closing_event_counts(self):
+        raw = _sse({"type": "text-delta", "delta": "rece"},
+                   {"type": "finish", "finishReason": "stop"},
+                   {"type": "text-delta", "delta": "ived"})
+        self.assertEqual(mozilib.extract_answer(raw, CFG), "rece")
+
+    def test_a_closing_event_carries_the_reply_when_nothing_streamed(self):
+        parts = [{"type": "text", "text": "who"},
+                 {"type": "reasoning", "text": REASONING},
+                 {"type": "text", "text": "le"}]
+        for closing in ({"type": "finish", "text": "whole"},
+                        {"type": "response.completed",
+                         "responseMessage": {"content": "whole"}},
+                        {"type": "finish", "responseMessage": {"parts": parts}}):
+            with self.subTest(closing=closing):
+                raw = _sse({"type": "reasoning-delta", "delta": REASONING},
+                           closing)
+                self.assertEqual(mozilib.extract_answer(raw, CFG), "whole")
+        # Text that streamed wins over the closing event's.
+        raw = _sse({"type": "text-delta", "delta": "streamed"},
+                   {"type": "finish", "text": "whole"})
+        self.assertEqual(mozilib.extract_answer(raw, CFG), "streamed")
+
+    def test_a_response_that_completed_to_call_tools_goes_on(self):
+        raw = _sse({"type": "response.completed", "finishReason": "tool-calls"},
+                   {"type": "text-delta", "delta": "after the tools"},
+                   {"type": "finish", "finishReason": "stop"})
+        self.assertEqual(mozilib.extract_answer(raw, CFG), "after the tools")
+
+    def test_an_error_before_any_text_ends_the_read(self):
+        raw = _sse({"type": "error", "errorText": OVERLOADED},
+                   {"type": "text-delta", "delta": "never read"},
+                   {"type": "finish", "finishReason": "stop"})
+        with self.assertRaises(mozilib.MoziError) as caught:
+            mozilib.extract_answer(raw, CFG)
+        self.assertNotIsInstance(caught.exception, mozilib.MoziCutShort)
+        self.assertIn(OVERLOADED, str(caught.exception))
+
+    def test_each_close_on_an_error_cuts_the_reply_short(self):
+        for closing in ({"type": "finish", "finishReason": "error"},
+                        {"type": "response.error"},
+                        {"type": "error", "error": {"message": OVERLOADED}}):
+            with self.subTest(closing=closing):
+                raw = _sse({"type": "text-delta", "delta": PART}, closing)
+                with self.assertRaises(mozilib.MoziCutShort) as caught:
+                    mozilib.extract_answer(raw, CFG)
+                self.assertEqual(caught.exception.partial, PART)
+        self.assertIn(OVERLOADED, str(caught.exception))
+
+    def test_a_stream_with_no_closing_event_was_interrupted(self):
+        raw = _sse({"type": "text-delta", "delta": PART})
+        with self.assertRaises(mozilib.MoziCutShort) as caught:
+            mozilib.extract_answer(raw, CFG)
+        self.assertEqual(caught.exception.partial, PART)
+        self.assertIn("before it finished", str(caught.exception))
+        raw = _sse({"type": "reasoning-delta", "delta": REASONING})
+        with self.assertRaises(mozilib.MoziError) as caught:
+            mozilib.extract_answer(raw, CFG)
+        self.assertNotIsInstance(caught.exception, mozilib.MoziCutShort)
 
 
 class OtherShapes(unittest.TestCase):

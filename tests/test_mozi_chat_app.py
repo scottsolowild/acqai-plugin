@@ -66,7 +66,8 @@ PORTAL_ID = "22222222-2222-4222-8222-222222222222"
 PORTAL_CHAT = PORTAL_ID + "@portal.acquisition.com"
 NEW_ID = "11111111-1111-4111-8111-111111111111"
 LEGACY_ANSWER = b'0:"The answer"\n'
-PORTAL_ANSWER = 'data: {"type":"text-delta","delta":"The answer"}'
+PORTAL_ANSWER = ('data: {"type":"text-delta","delta":"The answer"}\n\n'
+                 'data: {"type":"finish","finishReason":"stop"}')
 
 
 class ChatCase(unittest.TestCase):
