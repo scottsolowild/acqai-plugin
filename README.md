@@ -84,6 +84,11 @@ Say what you want in plain English:
 - "go back to yesterday's pricing conversation and ask about the pilot"
 - "keep Jane Doe out of anything you send"
 
+Or from the slash command:
+
+- `/acq <task>` — show each question, wait for yes, send, then ask again before each follow-up
+- `/acq -y <task>` (or `--yes`) — one yes for the run: first question and up to two follow-ups, then the final answer
+
 Claude writes the question from your docs and shows it before anything is
 sent. Each conversation is kept in `~/.config/acqai/answers/` as one file, so
 nothing is lost when the chat scrolls away. The file opens on the question,
@@ -108,8 +113,8 @@ and no folder at all still works: Claude sends your question on its own.
 
 ## The rules
 
-- **Your yes, every send.** The script asks before it sends, and Claude asks you before it runs the script. There is no batch mode.
-- **One question at a time.** The script paces itself.
+- **Your yes before anything leaves.** The script asks before it sends, and Claude asks you before it runs the script. `/acq -y` is one yes for the first question and its follow-ups in that run, not a silent batch.
+- **One question at a time on the wire.** The script paces itself.
 - **Your account, your use.** It does what you would do by hand, in your own browser, for yourself.
 - **Chat only.** It never posts to the community.
 - **Private things stay home.** Client names, call transcripts, anything you call private. Claude leaves them out, and you see the question before it goes. Names you add to the private list are checked on every send. When a question includes one, the send stops before it goes out.

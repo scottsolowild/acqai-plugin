@@ -5,9 +5,11 @@ description: >
   context: get ready (sign in when the session is out), shape the question,
   show it, send it through the bundled script on their yes, refine the answer
   with follow-up questions, and bring the mechanics home with the edits they
-  imply. A bare "/acq" is the readiness check alone. Trigger on "/acq", "ask
-  ACQ", "ask ACQ AI", "run this past ACQ", "what would ACQ say", "set up ACQ
-  AI", "sign into ACQ AI", or a pasted ACQ AI reply to sort through.
+  imply. A bare "/acq" is the readiness check alone. Pass -y or --yes on /acq
+  to run the full loop on one yes (first send and follow-ups) without asking
+  again between sends. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this
+  past ACQ", "what would ACQ say", "set up ACQ AI", "sign into ACQ AI", or a
+  pasted ACQ AI reply to sort through.
 ---
 
 # acq
@@ -15,7 +17,7 @@ description: >
 ACQ AI advises. The person decides. This skill runs the loop: the question,
 the send, the follow-ups, the result. The script is
 `${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py`. Every send goes through it, and every
-send needs the person's yes.
+send needs the person's yes for that run.
 
 ## Get ready: every run starts here, and a bare `/acq` is only this
 
@@ -38,6 +40,13 @@ With no task, show the result and stop: they are signed in and can ask with
 `/acq <task>`, or here is the one thing not fixed and what to do. With a task,
 go on to the loop once `ready` exits 0.
 
+## Two ways to run
+
+- **`/acq <task>`** — step by step. After `ready`, show each question, wait for yes, send with `-y`, then ask again before each follow-up.
+- **`/acq -y <task>`** (or `--yes`) — one yes for the whole loop. After `ready`, show the first question and the docs that ride with it. Wait for their yes once. Then send that question and up to two follow-ups with `-y` on each `send`, without asking again between them. Say up front that this run will send the first question and the follow-ups on that one yes. Cap follow-ups at two. Report when the loop ends.
+
+`-y` / `--yes` may sit anywhere in the arguments. Strip them from the task text before you interpret it. With no task left after stripping, run `ready` and stop (same as a bare `/acq`).
+
 ## The loop: `/acq <task>`
 
 1. **Interpret.** Turn the task into one question ACQ AI can answer with mechanics: what to change, why it works, what it displaces. A question about the person's voice, or about a relationship, is a different kind of question. Say so, and ask what they want ACQ AI's read on.
@@ -52,7 +61,11 @@ go on to the loop once `ready` exits 0.
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" send --file /tmp/acq-question.md -y
    ```
 
-   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation. Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`. Give each follow-up its reason in one line with `--why "…"`, and the file keeps it above the message.
+   The `-y` is their yes, carried to the script. The script paces itself and keeps the conversation, so a follow-up lands in the same thread. Read the answer, then refine it with a follow-up question or two in the same conversation. Each question brings in something the person's docs hold and ACQ AI does not have yet, such as a number or a result they already got. Where the answer is general, ask how it plays out with that number. Where it names a step without the reason, ask what makes it work. Where it and a doc point different ways, quote the doc and ask how the two fit. Write each one as a question rather than a correction, so the next answer builds on the last one and starts from more of the situation.
+
+   On a step-by-step run, wait for a yes before each follow-up send. On `/acq -y`, after the first yes, write each follow-up to a temp file, dry-run it, then send with `-y` without asking again. Still dry-run every send so a NOT ready line stops the loop.
+
+   Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`. Give each follow-up its reason in one line with `--why "…"`, and the file keeps it above the message.
 
 4. **Report.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
    - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten.
@@ -67,7 +80,7 @@ Stop and say why, with the fix the script named: `login` for a profile that is n
 
 ## Guards
 
-- Nothing sends without a yes. `-y` on the command is that yes, and it comes from the person, in the chat, after they have seen the question.
-- One question at a time. The script paces itself, and a batch is a series of yeses.
+- Nothing sends without a yes. On `/acq <task>`, that is one yes per send. On `/acq -y <task>`, that is one yes for the run: the first question and its follow-ups. `-y` on each `send` is that yes, carried to the script.
+- One question at a time on the wire. The script paces itself. A step-by-step run is a series of yeses; a `-y` run is one yes and a short chain.
 - The script reaches ACQ AI's chat and nothing else. It never posts to the community.
 - The person's account is theirs. The tool does what they would do by hand, in their own browser, for their own use.
