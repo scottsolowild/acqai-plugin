@@ -86,15 +86,15 @@ Say what you want in plain English:
 
 Or from the slash command:
 
-- `/acq <task>` — show each question, wait for yes in chat, send, then ask again before each follow-up
-- `/acq -y <task>` (or `--yes`) — the flag is the yes: show the first question, then send it and up to two follow-ups without waiting for another yes in chat
+- `/acq <task>` — show each question, wait for yes in chat, send, ask again before each follow-up, then wait before editing files
+- `/acq -y <task>` (or `--yes`) — the flag is the yes for the whole run: show the first question, send it and up to two follow-ups, write the Adopt edits (new files when the task calls for them), and record the outcome, with no further ask
 
 Claude writes the question from your docs and shows it before anything is
 sent. With `-y`, that show is for the record; the flag already covered the
-send. Each conversation is kept in `~/.config/acqai/answers/` as one file, so
-nothing is lost when the chat scrolls away. The file opens on the question,
-the best answer, and what changed, and each message below it sits under who
-sent it.
+send and the file edits. Each conversation is kept in `~/.config/acqai/answers/`
+as one file, so nothing is lost when the chat scrolls away. The file opens on
+the question, the best answer, and what changed, and each message below it sits
+under who sent it.
 
 ## What you need
 

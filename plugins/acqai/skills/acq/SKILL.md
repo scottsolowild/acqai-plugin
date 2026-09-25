@@ -6,10 +6,11 @@ description: >
   show it, send it through the bundled script on their yes, refine the answer
   with follow-up questions, and bring the mechanics home with the edits they
   imply. A bare "/acq" is the readiness check alone. Pass -y or --yes on /acq
-  to treat that flag as the yes for the whole loop (first send and follow-ups)
-  and send without waiting for another yes in chat. Trigger on "/acq", "ask
-  ACQ", "ask ACQ AI", "run this past ACQ", "what would ACQ say", "set up ACQ
-  AI", "sign into ACQ AI", or a pasted ACQ AI reply to sort through.
+  to treat that flag as the yes for the whole run: send without waiting in
+  chat, then write the Adopt edits into files and record the outcome, with no
+  further ask. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this past ACQ",
+  "what would ACQ say", "set up ACQ AI", "sign into ACQ AI", or a pasted ACQ AI
+  reply to sort through.
 ---
 
 # acq
@@ -17,7 +18,8 @@ description: >
 ACQ AI advises. The person decides. This skill runs the loop: the question,
 the send, the follow-ups, the result. The script is
 `${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py`. Every send goes through it, and every
-send needs the person's yes for that run. On `/acq -y`, the flag is that yes.
+send needs the person's yes for that run. On `/acq -y`, the flag is that yes
+for the send and for writing the Adopt edits.
 
 ## Get ready: every run starts here, and a bare `/acq` is only this
 
@@ -42,8 +44,8 @@ go on to the loop once `ready` exits 0.
 
 ## Two ways to run
 
-- **`/acq <task>`** — step by step. After `ready`, show each question, wait for yes in chat, send with `-y`, then ask again before each follow-up.
-- **`/acq -y <task>`** (or `--yes`) — the flag is the yes. After `ready`, show the first question and the docs that ride with it so they can see what goes out, then send that question and up to two follow-ups with `-y` on each `send` without waiting for another yes in chat. Do not ask "Send it?" or "Reply yes." Say up front that `-y` already covered this run. Cap follow-ups at two. Report when the loop ends.
+- **`/acq <task>`** — step by step. After `ready`, show each question, wait for yes in chat, send with `-y`, then ask again before each follow-up. After the loop, show the Adopt / Later / Drop piles and wait: make file edits only when asked, and record the outcome only once they say what to keep.
+- **`/acq -y <task>`** (or `--yes`) — the flag is the yes for the whole run. After `ready`, show the first question and the docs that ride with it so they can see what goes out, then send that question and up to two follow-ups with `-y` on each `send` without waiting for another yes in chat. Do not ask "Send it?" or "Reply yes." When the loop ends, write every Adopt change into the files now (edit an existing doc, or create a new one when the task or the answer calls for a separate page or offer), record the outcome, and report what you wrote. Do not ask which pile to keep. Do not ask permission to edit. Later and Drop stay in the report only. Cap follow-ups at two.
 
 `-y` / `--yes` may sit anywhere in the arguments. Strip them from the task text before you interpret it. With no task left after stripping, run `ready` and stop (same as a bare `/acq`).
 
@@ -67,12 +69,14 @@ go on to the loop once `ready` exits 0.
 
    Pass `--new` when the next question is a different topic. To pick up an earlier conversation, `answers` lists each answer with its chat. Read that answer's file, then send with `--continue <answer>`. Give each follow-up its reason in one line with `--why "…"`, and the file keeps it above the message.
 
-4. **Report.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
-   - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten.
+4. **Report, then land.** Give the person the answer with two labels: what ACQ AI said, and what you added. Then sort it into three piles.
+   - **Adopt.** A change to a doc, drafted in the person's own voice. ACQ AI's wording is raw material. The mechanics travel, and the words get rewritten. When the task asks for a new offer, page, or version, and the answer says it has to be separate, Adopt includes that new file.
    - **Later.** An idea worth keeping that changes more than today's question.
    - **Drop.** The rest, with one line on why.
 
-   Show the edits. Make them only when asked. Once the person decides, record it at the top of the answer's file, which the send named, so the file opens as a digest: `outcome <answer> --title "<the question, one line>" --answer "<the best answer, a few bullets>" --adopt "…" --suggest "…" --later "…" --drop "…"`, one flag for each line. `adopt` is a change you made, and `suggest` a change you drafted that waits on their yes.
+   On a step-by-step run: show the edits. Make them only when asked. Once the person decides, record it at the top of the answer's file, which the send named, so the file opens as a digest: `outcome <answer> --title "<the question, one line>" --answer "<the best answer, a few bullets>" --adopt "…" --suggest "…" --later "…" --drop "…"`, one flag for each line. `adopt` is a change you made, and `suggest` a change you drafted that waits on their yes.
+
+   On `/acq -y`: do not wait. Write every Adopt change into the files now. Create a new file when Adopt is a separate offer or page (next to the doc they pointed at, or in the folder you are in, with a clear slug). Then record the outcome with `--adopt` for each change you wrote, and `--later` / `--drop` for the rest. Report the paths you wrote. Never leave the run on "tell me which to record" or "I can also make the edits."
 
 ## When the send fails
 
@@ -80,7 +84,7 @@ Stop and say why, with the fix the script named: `login` for a profile that is n
 
 ## Guards
 
-- Nothing sends without a yes. On `/acq <task>`, that is one yes in chat per send. On `/acq -y <task>`, the `-y` on the command is the yes for the run (first question and follow-ups); do not ask again in chat. `-y` on each `send` carries that consent to the script.
-- One question at a time on the wire. The script paces itself. A step-by-step run is a series of chat yeses; a `-y` run is the flag as yes and a short chain.
+- Nothing sends without a yes. On `/acq <task>`, that is one yes in chat per send, and file edits wait for another yes. On `/acq -y <task>`, the `-y` on the command is the yes for the run: the sends, the Adopt file edits, and the outcome record. Do not ask again in chat. `-y` on each `send` carries that consent to the script.
+- One question at a time on the wire. The script paces itself. A step-by-step run is a series of chat yeses; a `-y` run is the flag as yes, a short chain, and the files written before the run ends.
 - The script reaches ACQ AI's chat and nothing else. It never posts to the community.
 - The person's account is theirs. The tool does what they would do by hand, in their own browser, for their own use.

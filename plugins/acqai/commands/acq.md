@@ -13,14 +13,16 @@ with the person's own docs as the context:
 - Shape the task into one question ACQ AI can answer with mechanics.
 - Show the person what is about to go out.
 - Send it through the bundled script, read the answer, and refine it with a follow-up question or two in the same conversation, each one bringing in what the person's docs add.
-- Report what ACQ AI said and what you added, and sort the result: adopt, later, or drop. Once the person decides, record it with the best answer at the top of the answer's file with `outcome`.
+- Report what ACQ AI said and what you added, and sort the result: adopt, later, or drop.
 
 Flags in `$ARGUMENTS`:
-- `-y` / `--yes` — this flag is the yes for the whole loop. Show the first question once, then send it and up to two follow-ups with `-y` on each send. Do not wait for another yes in chat. Do not ask "Send it?" or "Reply yes."
+- `-y` / `--yes` — this flag is the yes for the whole run. Show the first question once, then send it and up to two follow-ups with `-y` on each send. Do not wait for another yes in chat. Do not ask "Send it?" or "Reply yes." When the loop ends, write every Adopt change into the files now (including a new offer or page when the task calls for one), record the outcome, and stop. Do not ask which pile to keep or whether to edit.
 - No task (bare `/acq`, or only flags) — run `ready` and stop.
 
+Without `-y`, wait for a yes before each send, and wait again before file edits or recording the outcome.
+
 Rules:
-- Nothing is sent without a yes. On a plain `/acq <task>`, that is one yes in chat per send. On `/acq -y <task>`, the `-y` is that yes for the run.
+- Nothing is sent without a yes. On a plain `/acq <task>`, that is one yes in chat per send. On `/acq -y <task>`, the `-y` is that yes for the sends and the Adopt edits.
 - Client names and transcripts stay home, and so does anything the person calls private.
 - Never present your own analysis as ACQ AI's. If the send fails, stop and say why.
 
