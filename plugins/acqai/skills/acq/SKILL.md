@@ -2,11 +2,12 @@
 name: acq
 description: >
   Ask ACQ AI (Mozi) from Claude Code with the person's own docs as the
-  context: shape the question, show it, send it through the bundled script on
-  their yes, refine the answer with follow-up questions, and bring the
-  mechanics home with the edits they imply. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this past
-  ACQ", "what would ACQ say", "set up ACQ AI", or a pasted ACQ AI reply to sort
-  through.
+  context: get ready (sign in when the session is out), shape the question,
+  show it, send it through the bundled script on their yes, refine the answer
+  with follow-up questions, and bring the mechanics home with the edits they
+  imply. A bare "/acq" is the readiness check alone. Trigger on "/acq", "ask
+  ACQ", "ask ACQ AI", "run this past ACQ", "what would ACQ say", "set up ACQ
+  AI", "sign into ACQ AI", or a pasted ACQ AI reply to sort through.
 ---
 
 # acq
@@ -16,17 +17,26 @@ the send, the follow-ups, the result. The script is
 `${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py`. Every send goes through it, and every
 send needs the person's yes.
 
-## First run: set it up
-
-Start with the state of things:
+## Get ready: every run starts here, and a bare `/acq` is only this
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" ready
 ```
 
-- **Playwright not installed** → run `setup`. It makes a private venv with Playwright and its Chromium (one to three minutes). Pass `--company "Their Company"` when they belong to more than one company on ACQ AI, so the sign-in list is clicked for them.
-- **Login not yet** → run `login`. It opens a browser window at portal.acquisition.com/advisor and waits for them, up to ten minutes, so give the command a long timeout, or hand it to them to run in their own terminal. Tell them what to do in the window: sign in with the email code, click your company if a list shows, then send one short message there ("hi" is enough). The script learns the chat route from that message. It closes the window on its own once it has both.
-- **Route not learned** after a login → they can run `login` again and send a message, or do the by-hand step in the README (Copy as cURL, then `discover --from-curl`).
+It checks what a send needs, in order, fixes what it can, and ends with the
+state of things and `ready`:
+
+- **Playwright** missing → it runs `setup`: a private venv with Playwright and its Chromium (one to three minutes). Pass `--company "Their Company"` when they belong to more than one company on ACQ AI, so the sign-in list is clicked for them.
+- **The login** missing, or the saved session expired (a headless check, a few seconds) → it opens the sign-in window at portal.acquisition.com/advisor and waits for them, up to ten minutes. So give the command a long timeout, or hand it to them to run in their own terminal. Tell them what to do in the window: sign in with the email code, click your company if a list shows, then send one short message there ("hi" is enough). The script learns the chat route from that message and closes the window on its own once it has both.
+- **The route** not learned after a login → it stops (exit 1). They run `login` again and send a message, or do the by-hand step in the README (Copy as cURL, then `discover --from-curl`).
+- **The chat** the next send would continue is from the other app → it stops (exit 1) and names both ways on. That is the person's choice: `--new` on the send starts a fresh conversation, and the login the message names goes back to the old one.
+
+`ready --dry-run` names what it would run and runs nothing, browser included,
+so it is the way to show the person what is coming before a long step.
+
+With no task, show the result and stop: they are signed in and can ask with
+`/acq <task>`, or here is the one thing not fixed and what to do. With a task,
+go on to the loop once `ready` exits 0.
 
 ## The loop: `/acq <task>`
 
@@ -53,7 +63,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" probe
 
 ## When the send fails
 
-Stop and say why, with the fix the script named: `login` for a profile that is not signed in, `setup` for a missing Playwright, the login window (or `discover`) for a route never learned, a fresh `MOZI_TOKEN` for an expired cookie on the `--http` path. A private name comes out of the question, or the person says what to write in its place. A chat from the other app is the person's choice: `--new` starts a fresh conversation, and the login the message names goes back to the old one. Then run `probe` and show it. Never answer alone and present it as ACQ AI's. Answering alone is a different thing, and it is labeled as yours.
+Stop and say why, with the fix the script named: `login` for a profile that is not signed in, `setup` for a missing Playwright, the login window (or `discover`) for a route never learned, a fresh `MOZI_TOKEN` for an expired cookie on the `--http` path. A private name comes out of the question, or the person says what to write in its place. A chat from the other app is the person's choice: `--new` starts a fresh conversation, and the login the message names goes back to the old one. Then run `ready` and show it: it applies the fix it can and names the one it cannot. Never answer alone and present it as ACQ AI's. Answering alone is a different thing, and it is labeled as yours.
 
 ## Guards
 

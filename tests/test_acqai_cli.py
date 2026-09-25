@@ -30,6 +30,7 @@ os.environ.setdefault("ACQAI_STATE_DIR", _SCRATCH.name)
 sys.path.insert(0, str(SCRIPTS))
 
 import acqai  # noqa: E402
+import mozi_browser  # noqa: E402
 import mozilib  # noqa: E402
 
 PORTAL_ROUTE = {
@@ -392,6 +393,123 @@ class CutShort(CliCase):
         self.assertIn("Price it at $4,500 and", reply)
         self.assertIn("Cut short here", reply)
 
+class Ready(CliCase):
+    """`ready` checks what a send needs, in order, and fixes what it can:
+    setup, the sign-in window, then the route and the chat. Nothing here
+    opens a browser: the steps that would are replaced and counted."""
+
+    def setUp(self):
+        super().setUp()
+        self.profile = self.state / "storage-state.json"
+
+    def ready(self, *args, session=None, route=PORTAL_ROUTE, chat=None,
+              playwright=True):
+        calls = {"setup": [], "login": [], "hop": []}
+
+        def setup(rest):
+            calls["setup"].append(list(rest))
+            return 0
+
+        def login(rest):
+            calls["login"].append(list(rest))
+            self.profile.write_text("{}", encoding="utf-8")
+            return 0
+
+        def hop(argv, stdin_text=None):
+            calls["hop"].append(list(argv))
+            return None
+
+        check = mock.Mock(side_effect=session)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(acqai, "_playwright_here", return_value=playwright), \
+                mock.patch.object(acqai, "_venv_has_playwright", return_value=False), \
+                mock.patch.object(acqai, "_under_venv", side_effect=hop), \
+                mock.patch.object(acqai, "cmd_setup", side_effect=setup), \
+                mock.patch.object(acqai, "cmd_login", side_effect=login), \
+                mock.patch.object(acqai, "ANSWERS", self.answers), \
+                mock.patch.object(mozi_browser, "STATE_FILE", self.profile), \
+                mock.patch.object(mozi_browser, "require_session", check), \
+                mock.patch.object(mozilib, "endpoint", return_value=route), \
+                mock.patch.object(mozilib, "load_chat_id", return_value=chat), \
+                contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = acqai.main(["ready", *args])
+        calls["checked"] = check.call_count
+        return code, out.getvalue(), err.getvalue(), calls
+
+    def test_everything_in_place_says_ready(self):
+        self.profile.write_text("{}", encoding="utf-8")
+        code, out, err, calls = self.ready()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("ready: ask with", out)
+        self.assertIn("login:      profile saved", out)
+        self.assertEqual(calls["checked"], 1, "the saved session is checked")
+        self.assertEqual(calls["setup"], [])
+        self.assertEqual(calls["login"], [])
+        self.assertEqual(calls["hop"], [["ready"]])
+
+    def test_no_login_saved_opens_the_window(self):
+        code, out, err, calls = self.ready()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(calls["login"], [[]])
+        self.assertEqual(calls["checked"], 0, "nothing to check before a login")
+        self.assertIn("no login saved yet", err)
+        self.assertIn("ready: ask with", out)
+
+    def test_an_expired_session_opens_the_window(self):
+        self.profile.write_text("{}", encoding="utf-8")
+        gone = mozi_browser.BrowserNotReady("Mozi profile is on the sign-in page")
+        code, out, err, calls = self.ready(session=gone)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(calls["checked"], 1)
+        self.assertEqual(calls["login"], [[]])
+        self.assertIn("sign-in page", err)
+        self.assertIn("ready: ask with", out)
+
+    def test_missing_playwright_runs_setup_and_carries_the_company(self):
+        code, out, err, calls = self.ready("--company", "Acme", playwright=False)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(calls["setup"], [["--company", "Acme"]])
+        self.assertEqual(calls["hop"], [["ready", "--company", "Acme"]])
+        self.assertEqual(calls["login"], [["--company", "Acme"]])
+
+    def test_a_route_never_learned_is_the_stop(self):
+        self.profile.write_text("{}", encoding="utf-8")
+        code, out, err, calls = self.ready(route=None)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("NOT ready. route: not learned yet", err)
+        self.assertIn("discover --from-curl", err)
+        self.assertNotIn("ready: ask with", out)
+
+    def test_a_chat_from_the_other_app_is_the_stop(self):
+        self.profile.write_text("{}", encoding="utf-8")
+        code, out, err, calls = self.ready(chat=OLD_CHAT)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("NOT ready: Mozi chat 18711427… is from the older app", err)
+        self.assertIn("--new starts a fresh thread", err)
+        self.assertNotIn("ready: ask with", out)
+
+    def test_a_dry_run_names_the_steps_and_runs_nothing(self):
+        code, out, err, calls = self.ready("--dry-run", route=None)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("ready would run:", out)
+        self.assertIn("login: no login saved yet", out)
+        self.assertIn("route: not learned yet", out)
+        self.assertIn("not ready: nothing was run (dry run)", out)
+        self.assertEqual(calls["setup"] + calls["login"] + calls["hop"], [])
+        self.assertEqual(calls["checked"], 0, "a dry run opens no browser")
+        self.profile.write_text("{}", encoding="utf-8")
+        code, out, err, calls = self.ready("--dry-run")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("ready: nothing to run (dry run)", out)
+        self.assertEqual(calls["checked"], 0)
+
+    def test_a_fresh_state_dry_run_names_the_login_from_the_command_line(self):
+        r = self.run_cli("ready", "--dry-run")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("login: no login saved yet", r.stdout)
+        self.assertFalse((self.state / "venv").exists(), "no setup ran")
+        self.assertFalse(self.profile.exists(), "no login ran")
 
 if __name__ == "__main__":
     unittest.main()

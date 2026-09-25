@@ -12,6 +12,11 @@ own docs as the context, one paced question at a time, each one on your yes.
   acqai.py probe [--session]          what is set up: venv, route, chat, consent
                                       (--session also opens the profile headless
                                       and says whether it is still signed in)
+  acqai.py ready [--company NAME]     get ready for a send: setup when Playwright
+                                      is missing, the sign-in window when the
+                                      saved login is out, then the route and the
+                                      chat the next send continues (--dry-run
+                                      names what it would run and runs nothing)
   acqai.py send "question" [-y]       one question, one answer (asks y/N first)
   acqai.py send --file PATH [-y]      the question from a file (- for stdin)
   acqai.py send ["note"] --paste [-y] the question from the clipboard, after an
@@ -742,6 +747,87 @@ def cmd_probe(rest: list) -> int:
     return 0
 
 
+def cmd_ready(rest: list) -> int:
+    """Everything a send needs, in order, fixing what it can. Playwright:
+    setup when it is missing. The login: a headless check of the saved
+    profile, and the sign-in window when there is none or it has expired.
+    The route: learned from one message in that window. The chat: the one
+    the next send would continue has to be on the route's app. Exit 0 with
+    the state of things once all four hold, 1 on the first that does not
+    hold and cannot be fixed here. --dry-run names what it would run and
+    runs nothing, browser included."""
+    dry = "--dry-run" in rest
+    rest = [a for a in rest if a != "--dry-run"]
+    company = _flag_value(rest, "--company")
+    flags = ["--company", company] if company else []
+    would: list[str] = []
+    if not (_playwright_here() or _venv_has_playwright()):
+        if dry:
+            would.append("setup" + (f" --company {shlex.quote(company)}" if company else "")
+                         + ": Playwright is not installed")
+        else:
+            _say("Playwright is not installed: running setup first…")
+            code = cmd_setup(list(flags))
+            if code:
+                return code
+    elif company:
+        mozilib.save_config(company=company)
+    if not dry:
+        # The session check drives the browser, so from here the run sits
+        # under the venv when that is where Playwright lives.
+        code = _under_venv(["ready", *flags])
+        if code is not None:
+            return code
+    import mozi_browser
+    out = ""
+    if not mozi_browser.STATE_FILE.is_file():
+        out = "no login saved yet"
+    elif not dry:
+        try:
+            mozi_browser.require_session()
+        except mozilib.MoziError as err:
+            out = str(err)
+    if out:
+        if dry:
+            would.append(f"login: {out}")
+        else:
+            _say(f"login: {out}")
+            _say("opening the sign-in window; it waits up to ten minutes for you…")
+            code = cmd_login(list(flags))
+            if code:
+                return code
+    cfg = mozilib.endpoint() or {}
+    if not cfg.get("url"):
+        line = ("route: not learned yet. Send one message in the login window "
+                f"({SELF} login), or learn it by hand: {SELF} discover --from-curl FILE")
+        if dry:
+            would.append(line)
+        else:
+            cmd_probe([])
+            _say("NOT ready. " + line)
+            return 1
+    why = mozilib.chat_mismatch(mozilib.load_chat_id(), cfg)
+    if why:
+        if dry:
+            would.append(f"next send: NOT ready: {why}")
+        else:
+            cmd_probe([])
+            _say(f"NOT ready: {why}")
+            return 1
+    cmd_probe([])
+    if dry:
+        if would:
+            print("ready would run:")
+            for line in would:
+                print("  " + line)
+            print("not ready: nothing was run (dry run)")
+            return 1
+        print("ready: nothing to run (dry run)")
+        return 0
+    print(f'ready: ask with {SELF} send "…" -y')
+    return 0
+
+
 def cmd_send(rest: list, argv: list) -> int:
     dry = "--dry-run" in rest
     http = "--http" in rest
@@ -1036,6 +1122,8 @@ def main(argv: list) -> int:
             return cmd_login_legacy(rest)
         if mode == "probe":
             return cmd_probe(rest)
+        if mode == "ready":
+            return cmd_ready(rest)
         if mode == "send":
             return cmd_send(rest, argv)
         if mode == "discover":
