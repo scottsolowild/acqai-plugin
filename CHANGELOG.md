@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.7.1] - 2026-09-25
+
+### Fixed
+- /acq -y is the yes, do not ask again in chat (34c2b03)
+  The flag on the command is consent for the first send and follow-ups. Show the question for the record, then send without waiting for Reply yes.
+
 ## [0.7.0] - 2026-09-25
 
 ### Added
