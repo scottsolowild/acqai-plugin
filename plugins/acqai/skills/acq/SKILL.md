@@ -2,15 +2,15 @@
 name: acq
 description: >
   Ask ACQ AI (Mozi) from Claude Code with the person's own docs as the
-  context: get ready (sign in when the session is out), shape the question,
-  show it, send it through the bundled script on their yes, refine the answer
-  with follow-up questions, and bring the mechanics home with the edits they
-  imply. A bare "/acq" is the readiness check alone. Pass -y or --yes on /acq
-  to treat that flag as the yes for the whole run: send without waiting in
-  chat, then write the Adopt edits into files and record the outcome, with no
-  further ask. Trigger on "/acq", "ask ACQ", "ask ACQ AI", "run this past ACQ",
-  "what would ACQ say", "set up ACQ AI", "sign into ACQ AI", or a pasted ACQ AI
-  reply to sort through.
+  context: get ready first (sign in when the session is out; a question
+  argument does not skip this), shape the question, show it, send it through
+  the bundled script on their yes, refine the answer with follow-up questions,
+  and bring the mechanics home with the edits they imply. A bare "/acq" is the
+  readiness check alone. Pass -y or --yes on /acq to treat that flag as the yes
+  for the whole run: send without waiting in chat, then write the Adopt edits
+  into files and record the outcome, with no further ask. Trigger on "/acq",
+  "ask ACQ", "ask ACQ AI", "run this past ACQ", "what would ACQ say", "set up
+  ACQ AI", "sign into ACQ AI", or a pasted ACQ AI reply to sort through.
 ---
 
 # acq
@@ -22,6 +22,10 @@ send needs the person's yes for that run. On `/acq -y`, the flag is that yes
 for the send and for writing the Adopt edits.
 
 ## Get ready: every run starts here, and a bare `/acq` is only this
+
+**First tool call, always** — before Interpret, Gather, Show, or Send. A task
+in the arguments does not skip this. Do not shape a question until `ready`
+exits 0.
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" ready
@@ -40,7 +44,8 @@ so it is the way to show the person what is coming before a long step.
 
 With no task, show the result and stop: they are signed in and can ask with
 `/acq <task>`, or here is the one thing not fixed and what to do. With a task,
-go on to the loop once `ready` exits 0.
+go on to the loop once `ready` exits 0. If ready exits non-zero, stop: report
+the error and the fix, and do not answer alone.
 
 ## Two ways to run
 
@@ -50,6 +55,8 @@ go on to the loop once `ready` exits 0.
 `-y` / `--yes` may sit anywhere in the arguments. Strip them from the task text before you interpret it. With no task left after stripping, run `ready` and stop (same as a bare `/acq`).
 
 ## The loop: `/acq <task>`
+
+0. **Ready** (already required above). Do not start step 1 until `ready` exited 0.
 
 1. **Interpret.** Turn the task into one question ACQ AI can answer with mechanics: what to change, why it works, what it displaces. A question about the person's voice, or about a relationship, is a different kind of question. Say so, and ask what they want ACQ AI's read on.
 
@@ -84,6 +91,7 @@ Stop and say why, with the fix the script named: `login` for a profile that is n
 
 ## Guards
 
+- **Ready before the loop.** Do not Interpret, Gather, or Send until `ready` exits 0. A question argument is not a skip.
 - Nothing sends without a yes. On `/acq <task>`, that is one yes in chat per send, and file edits wait for another yes. On `/acq -y <task>`, the `-y` on the command is the yes for the run: the sends, the Adopt file edits, and the outcome record. Do not ask again in chat. `-y` on each `send` carries that consent to the script.
 - One question at a time on the wire. The script paces itself. A step-by-step run is a series of chat yeses; a `-y` run is the flag as yes, a short chain, and the files written before the run ends.
 - The script reaches ACQ AI's chat and nothing else. It never posts to the community.

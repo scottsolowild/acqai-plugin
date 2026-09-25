@@ -2,13 +2,23 @@
 description: Get ready for ACQ AI (sign in when needed), or ask it a question with your docs as the context.
 ---
 
-Run the acq skill. With no task, this run is the readiness check alone: run
-`ready`, which checks Playwright, the login, the route, and the chat the next
-send would continue, fixes what it can (setup, the sign-in window), and says
-what is next. Show the person the result and stop.
+Run the acq skill.
 
-With a task, `ready` runs first, then the loop. Ask ACQ AI (Mozi) from here,
-with the person's own docs as the context:
+**First tool call, always:**
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/acqai.py" ready
+```
+
+Do not interpret the task, gather docs, shape a question, or send until `ready`
+exits 0. A task in `$ARGUMENTS` does not skip this. `ready` checks Playwright,
+the login, the route, and the chat the next send would continue; it runs setup
+and opens the sign-in window when needed.
+
+With no task (bare `/acq`, or only flags after stripping `-y` / `--yes`), show
+the ready result and stop.
+
+With a task, after ready exits 0, run the loop:
 
 - Shape the task into one question ACQ AI can answer with mechanics.
 - Show the person what is about to go out.
@@ -22,6 +32,7 @@ Flags in `$ARGUMENTS`:
 Without `-y`, wait for a yes before each send, and wait again before file edits or recording the outcome.
 
 Rules:
+- Ready first, every time. A question argument is not a skip.
 - Nothing is sent without a yes. On a plain `/acq <task>`, that is one yes in chat per send. On `/acq -y <task>`, the `-y` is that yes for the sends and the Adopt edits.
 - Client names and transcripts stay home, and so does anything the person calls private.
 - Never present your own analysis as ACQ AI's. If the send fails, stop and say why.

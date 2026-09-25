@@ -75,7 +75,7 @@ claude -p "ask ACQ AI what it would change first about my offer"
 
 Say what you want in plain English:
 
-- `/acq` on its own: get ready. It checks you are signed in, opens the sign-in window when you are not, and says what is next. Every ask runs the same check first.
+- `/acq` on its own: get ready. It checks you are signed in, opens the sign-in window when you are not, and says what is next. Every ask runs the same check first — a question after `/acq` does not skip it.
 - "ask ACQ AI to price this offer" (with the offer doc open or named)
 - "run my landing page past ACQ AI and tell me what it would change"
 - "what would ACQ AI say about this funnel? here are the numbers"
