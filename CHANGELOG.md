@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.7.0] - 2026-09-25
+
+### Added
+- /acq -y runs the full loop on one yes (1d690b1)
+  Step-by-step /acq still asks before each send. /acq -y (or --yes) shows the first question once, waits for one yes, then sends that question and up to two follow-ups with -y on each send, without asking again between them.
+
 ## [0.6.1] - 2026-09-25
 
 ### Fixed
