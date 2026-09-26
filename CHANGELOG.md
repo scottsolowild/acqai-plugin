@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.8.1] - 2026-09-26
+
+### Fixed
+- /acq with a question still runs ready first (3e3caf1)
+  A task in $ARGUMENTS must not skip the sign-in preflight. The command and skill make ready the first tool call every time.
+
 ## [0.8.0] - 2026-09-25
 
 ### Added
