@@ -67,12 +67,31 @@ except ImportError:  # the plugin ships this file alone; the shell carries the e
     def load_dotenv() -> None:
         return None
 
+try:
+    from repolib import main_checkout  # the notes repo's worktree resolver
+except ImportError:  # the plugin sets ACQAI_STATE_DIR, so no checkout is read
+    def main_checkout(root: Path) -> Path:
+        return root
+
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def default_state_dir(root: Path) -> Path:
+    """review/mozi/ beside the scripts, or the main checkout's from a linked
+    worktree that has none. The folder is gitignored and machine-local, so
+    only the main checkout holds the login, and a worktree's send reads that
+    one. Outside git, or with no main checkout to find, root is its own."""
+    here = root / "review" / "mozi"
+    if here.is_dir():
+        return here
+    return main_checkout(root) / "review" / "mozi"
+
+
 # The learned route, the chat id, and the browser profile. In the notes repo
 # they sit under review/mozi/ (gitignored). The plugin sets ACQAI_STATE_DIR to
 # a folder in the member's home, so a plugin update never takes a login with it.
 STATE_DIR = Path(os.environ.get("ACQAI_STATE_DIR", "").strip()
-                 or (ROOT / "review" / "mozi")).expanduser()
+                 or default_state_dir(ROOT)).expanduser()
 ENDPOINT_FILE = STATE_DIR / "endpoint.json"
 CHAT_ID_FILE = STATE_DIR / "chat-id"
 CONFIG_FILE = STATE_DIR / "config.json"  # the plugin's saved company; notes reads env
