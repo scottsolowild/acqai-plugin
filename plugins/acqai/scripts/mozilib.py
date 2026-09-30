@@ -75,14 +75,21 @@ except ImportError:  # the plugin sets ACQAI_STATE_DIR, so no checkout is read
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# What a state dir holds once it has a login or a route: the learned route,
+# the saved cookies (mozi_browser.STATE_FILE), and the saved chat.
+_STATE_MARKS = ("endpoint.json", "storage-state.json", "chat-id")
+
 
 def default_state_dir(root: Path) -> Path:
-    """review/mozi/ beside the scripts, or the main checkout's from a linked
-    worktree that has none. The folder is gitignored and machine-local, so
+    """review/mozi/ beside the scripts when it holds a login or a route, or
+    else the main checkout's. The folder is gitignored and machine-local, so
     only the main checkout holds the login, and a worktree's send reads that
-    one. Outside git, or with no main checkout to find, root is its own."""
+    one. A browser launch makes browser-profile/ before any login lands, so a
+    worktree folder with none of _STATE_MARKS is a leftover. Read as the state
+    dir, it hid the main checkout's route and chat. Outside git, or with no
+    main checkout to find, root is its own."""
     here = root / "review" / "mozi"
-    if here.is_dir():
+    if any((here / name).is_file() for name in _STATE_MARKS):
         return here
     return main_checkout(root) / "review" / "mozi"
 
