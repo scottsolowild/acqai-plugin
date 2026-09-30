@@ -26,9 +26,9 @@ jobs:
           fetch-depth: 0
       - name: The scripts compile
         run: python3 -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py
-      # tests/ holds the transport pair's tests, shared byte for byte with the
-      # notes repo, and the script's own. Standard library only, like the rest
-      # of this job: the page is a fake and the transport is never reached.
+      # tests/ holds the transport pair's tests and the script's own. Standard
+      # library only, like the rest of this job: the page is a fake and the
+      # transport is never reached.
       - name: Unit tests
         run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai-tests" PYTHONPATH=plugins/acqai/scripts python3 -m unittest discover -s tests -p "test_*.py"
       # A commit's type is what the release reads, and CI writes the version,

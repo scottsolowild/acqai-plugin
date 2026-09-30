@@ -28,10 +28,10 @@ cookies are domain-scoped).
                    dialogue can continue in the same conversation
 
 Runs on the member's own machine, where the browser has normal network. The
-setup step (./setup.sh in the notes repo, `setup` in the plugin) installs
-Playwright and its Chromium into a dedicated venv, and the wrapper uses that
-venv's python. The fence is unchanged: a send still needs MOZI_SEND_OK; the
-browser removes the token pain, not the consent. The state dir, the command
+setup step (mozilib.SETUP_CMD) installs Playwright and its Chromium into a
+dedicated venv, and the wrapper uses that venv's python. The fence is
+unchanged: a send still needs MOZI_SEND_OK; the browser removes the token pain,
+not the consent. The state dir, the command
 name in messages, and the company come from the environment (mozilib.STATE_DIR,
 mozilib.CMD, MOZI_COMPANY), so this file ships as a public give unchanged.
 """
@@ -50,13 +50,13 @@ import mozilib
 PROFILE_DIR = mozilib.STATE_DIR / "browser-profile"
 # Decrypted Clerk cookies from the headed login. Headless chrome-headless-shell
 # cannot read the persistent-profile cookie DB that headed Chromium wrote, so
-# login also dumps this JSON (gitignored with review/mozi/) and headless loads it.
+# login also dumps this JSON beside the profile and headless loads it.
 STATE_FILE = PROFILE_DIR.parent / "storage-state.json"
 # Clerk's /sign-in/choose lists every org the member belongs to. Mozi chats
 # are scoped to one; the wrong pick (or "All Companies" after a later UI
 # change) answers against the wrong context. MOZI_COMPANY names the one to
-# click (the notes wrapper exports it; the plugin saves it at setup). With no
-# name, the member clicks it in the window, and the headless paths say so.
+# click (the caller exports it, or setup saves it). With no name, the member
+# clicks it in the window, and the headless paths say so.
 DEFAULT_COMPANY = ""
 _company_hint_shown = False
 _company_missed: set[str] = set()
@@ -564,7 +564,7 @@ def _on_org_choose(page, company: str | None = None) -> bool:
 def _company_locs(scope, name: str):
     locs = []
     # The portal's workspace button holds a monogram, the name, and "Select
-    # →", so its accessible name is "SS Scott Solo Wild Select →" and none of
+    # →", so its accessible name is "AC Acme Co Select →" and none of
     # the role lookups below match it. Find it by the name's own span.
     try:
         locs.append(scope.locator(_WORKSPACE_BTN).filter(

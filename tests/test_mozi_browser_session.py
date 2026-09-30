@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -408,6 +409,32 @@ class ClerkSignedIn(unittest.TestCase):
 
 
 class ContextLaunch(unittest.TestCase):
+    """_context makes the profile folder before the launch, so these run it
+    against a temp one. Against the real one, each suite run left an empty
+    browser-profile/ in the checkout it ran from."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.profile = Path(tmp.name) / "browser-profile"
+        patch = mock.patch.object(mozi_browser, "PROFILE_DIR", self.profile)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_launch_uses_the_profile_it_made(self):
+        captured = {}
+
+        class FakeChromium:
+            def launch_persistent_context(self, path, **kwargs):
+                captured["path"] = path
+                return mock.Mock()
+
+        pw = mock.Mock()
+        pw.chromium = FakeChromium()
+        mozi_browser._context(pw, headless=False)
+        self.assertEqual(captured["path"], str(self.profile))
+        self.assertTrue(self.profile.is_dir())
+
     def test_headless_uses_full_chromium_without_extensions(self):
         captured = {}
 

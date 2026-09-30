@@ -89,7 +89,6 @@ class ChatCase(unittest.TestCase):
                 mock.patch.object(mozilib, "endpoint",
                                   side_effect=lambda: self.cfg),
                 mock.patch.object(mozilib, "session_expiry", return_value=None),
-                mock.patch.object(mozilib, "load_dotenv"),
                 mock.patch.object(mozilib, "_pace"),
                 mock.patch("sys.stderr", self.err)):
             patch.start()
