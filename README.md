@@ -159,9 +159,9 @@ is what carries the answer), Copy → Copy as cURL, save it to a file, and run
 `acqai.py discover --from-curl that-file`. The cookie in it is read and thrown
 away. Only the route is kept.
 
-**I still use the older ai.acquisition.com app.** Run `acqai.py login-legacy`
-(or `./acqai.sh login-legacy` in the notes repo). Send one message in that
-window so the learned route matches. Later sends follow that route's host.
+**I still use the older ai.acquisition.com app.** Run `acqai.py login-legacy`.
+Send one message in that window so the learned route matches. Later sends
+follow that route's host.
 `login` alone returns you to portal. A conversation continues only on the app
 that started it, so a send on the other app stops before it goes out. It says
 that `--new` starts a fresh conversation there, and which login goes back.

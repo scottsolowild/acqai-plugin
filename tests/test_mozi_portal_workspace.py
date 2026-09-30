@@ -313,7 +313,6 @@ class Refusal(unittest.TestCase):
         env = {"MOZI_TOKEN": "__Secure-aegis-external.session_token=t",
                "MOZI_BASE": PORTAL}
         with mock.patch.dict(os.environ, env), \
-             mock.patch.object(mozilib, "load_dotenv"), \
              mock.patch.object(mozilib, "_pace"), \
              mock.patch.object(mozilib.urllib.request, "urlopen",
                                side_effect=err):

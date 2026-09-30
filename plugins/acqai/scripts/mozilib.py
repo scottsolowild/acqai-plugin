@@ -40,10 +40,9 @@ Secrets, both the member's own browser session, never committed:
   MOZI_BASE    app origin (default https://portal.acquisition.com; legacy
                https://ai.acquisition.com)
 The chat route and payload shape, learned by `discover` from a Copy-as-cURL of
-a real send, land in endpoint.json under STATE_DIR (review/mozi/ here,
-gitignored; the plugin's own folder elsewhere). The saved chat sits beside
-it in chat-id. No secret is ever written there; the cookie stays in the
-environment.
+a real send, land in endpoint.json under STATE_DIR (ACQAI_STATE_DIR, or
+~/.config/acqai). The saved chat sits beside it in chat-id. No secret is ever
+written there; the cookie stays in the environment.
 """
 from __future__ import annotations
 
@@ -61,46 +60,19 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-try:
-    from load_env import load_dotenv  # the notes repo's .env reader
-except ImportError:  # the plugin ships this file alone; the shell carries the env
-    def load_dotenv() -> None:
-        return None
-
-try:
-    from repolib import main_checkout  # the notes repo's worktree resolver
-except ImportError:  # the plugin sets ACQAI_STATE_DIR, so no checkout is read
-    def main_checkout(root: Path) -> Path:
-        return root
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def default_state_dir(root: Path) -> Path:
-    """review/mozi/ beside the scripts, or the main checkout's from a linked
-    worktree that has none. The folder is gitignored and machine-local, so
-    only the main checkout holds the login, and a worktree's send reads that
-    one. Outside git, or with no main checkout to find, root is its own."""
-    here = root / "review" / "mozi"
-    if here.is_dir():
-        return here
-    return main_checkout(root) / "review" / "mozi"
-
-
-# The learned route, the chat id, and the browser profile. In the notes repo
-# they sit under review/mozi/ (gitignored). The plugin sets ACQAI_STATE_DIR to
-# a folder in the member's home, so a plugin update never takes a login with it.
+# The learned route, the chat id, the saved company, and the browser profile.
+# A caller sets ACQAI_STATE_DIR before it imports this file. Unset, they sit
+# in the member's home, so an update to the scripts never takes a login with it.
 STATE_DIR = Path(os.environ.get("ACQAI_STATE_DIR", "").strip()
-                 or default_state_dir(ROOT)).expanduser()
+                 or "~/.config/acqai").expanduser()
 ENDPOINT_FILE = STATE_DIR / "endpoint.json"
 CHAT_ID_FILE = STATE_DIR / "chat-id"
-CONFIG_FILE = STATE_DIR / "config.json"  # the plugin's saved company; notes reads env
+CONFIG_FILE = STATE_DIR / "config.json"  # the saved company, when env has none
 CHAT_ID_ENV = "MOZI_CHAT_ID"  # overrides the file for one process / nested send
-# How a message names the command to run next: ./acqai.sh in the notes repo,
-# the plugin's own script elsewhere. Both transport files read these, so a
-# public copy of the pair never tells a stranger to run ./acqai.sh.
-CMD = os.environ.get("ACQAI_CMD", "").strip() or "./acqai.sh"
-SETUP_CMD = os.environ.get("ACQAI_SETUP_CMD", "").strip() or "./setup.sh"
+# How a message names the command to run next, and the setup that installs the
+# browser. The caller names its own script in ACQAI_CMD and ACQAI_SETUP_CMD.
+CMD = os.environ.get("ACQAI_CMD", "").strip() or "acqai"
+SETUP_CMD = os.environ.get("ACQAI_SETUP_CMD", "").strip() or f"{CMD} setup"
 PORTAL_BASE = "https://portal.acquisition.com"
 LEGACY_BASE = "https://ai.acquisition.com"
 DEFAULT_BASE = PORTAL_BASE
@@ -285,8 +257,8 @@ def chat_for_route(saved: str | None, cfg: dict | None = None) -> str | None:
 
 
 def config() -> dict:
-    """The plugin's saved settings (the company, for now). Empty in the notes
-    repo, where the wrapper exports MOZI_COMPANY instead."""
+    """The saved settings (the company, for now). Empty where the caller
+    exports MOZI_COMPANY instead."""
     try:
         data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -304,11 +276,7 @@ def save_config(**fields) -> Path:
 
 
 def cookie_header() -> str:
-    """The whole Cookie header (MOZI_TOKEN), verbatim."""
-    try:
-        load_dotenv()
-    except Exception:
-        pass
+    """The whole Cookie header (MOZI_TOKEN), verbatim, from the environment."""
     return os.environ.get("MOZI_TOKEN", "").strip()
 
 
