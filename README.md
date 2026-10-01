@@ -1,13 +1,14 @@
 # acqai
 
-ACQ AI, in Claude Code.
+ACQ AI, in Claude.
 
-You are in a Claude Code conversation about your business. This plugin lets
-that conversation include ACQ AI. Claude reads the docs you point it at, writes
-the question, shows it to you, sends it to ACQ AI through your own signed-in
-browser once you say yes, reads the answer, asks a follow-up or two with what
-your docs add, and hands you the result with the edits it implies. Your docs are the context, so
-there is nothing to paste and no context document to keep current.
+You are in a Claude Code or Cowork conversation about your business. This
+plugin lets that conversation include ACQ AI. Claude reads the docs you point
+it at, writes the question, shows it to you, sends it to ACQ AI through your
+own signed-in browser once you say yes, reads the answer, asks a follow-up or
+two with what your docs add, and hands you the result with the edits it
+implies. Your docs are the context, so there is nothing to paste and no
+context document to keep current.
 
 This is its own GitHub marketplace
 ([scottsolowild/acqai-plugin](https://github.com/scottsolowild/acqai-plugin)),
@@ -46,12 +47,26 @@ there. If you already ran Option A, skip Add marketplace. The plugin is
 already under **+ → Plugins**. Quit Desktop and reopen if it is missing, so
 it reloads `~/.claude/settings.json`.
 
+### Option C: Cowork (Claude desktop app)
+
+A Cowork task that runs on your computer loads it. A Cowork task that runs
+in Anthropic's cloud does not.
+
+1. In the Claude desktop app, open **Customize → Plugins**.
+2. **Add marketplace** → `scottsolowild/acqai-plugin`.
+3. Install **acqai** from it.
+
+In Cowork the command is `/acqai:acq`. If it says the plugin's connector did
+not start, open acqai under **Customize → Plugins** and connect it on its
+**Connectors** tab. A plugin installed here is saved to your Claude account,
+so Claude Code picks it up at its next session start too.
+
 ## After install (once, a few minutes)
 
 1. **Type `/acq`** in a Claude Code chat (Desktop local, or `claude` in a
-   terminal), or say "set up ACQ AI". On its own, `/acq` gets you ready:
-   Claude installs the browser it drives (a private copy in
-   `~/.config/acqai`) and opens a sign-in window at
+   terminal), or `/acqai:acq` in Cowork, or say "set up ACQ AI". On its own,
+   `/acq` gets you ready: Claude installs the browser it drives (a private
+   copy in `~/.config/acqai`) and opens a sign-in window at
    portal.acquisition.com/advisor.
 2. **Sign in** in that window. Email code, as usual. If a company list
    shows, click yours. Send one short message there ("hi" is enough). The
@@ -99,7 +114,9 @@ under who sent it.
 ## What you need
 
 - A paid ACQ AI (Mozi) account you can sign into in a browser.
-- Claude Code (terminal CLI and/or the Desktop app on a local session).
+- Claude Code (the terminal, or the desktop app's Code tab on a local
+  session), or Cowork in the Claude desktop app, on a task that runs on your
+  computer.
 - Python 3.9 or newer. A Mac already has it.
 
 Cursor is not required. A repo is not required. A folder of docs is enough,
@@ -122,10 +139,16 @@ and no folder at all still works: Claude sends your question on its own.
 
 ## Questions
 
-**Is Cursor required?** No. It runs from Claude Code in a terminal, or in
-Claude Code's desktop app on a **local** session. Cloud sessions do not load
-this plugin. Cursor is one editor that can host Claude Code, and it is not
-needed.
+**Is Cursor required?** No. It runs from Claude Code in a terminal, from the
+desktop app's Code tab on a **local** session, or from Cowork on your
+computer. Cloud sessions do not load this plugin. Cursor is one editor that
+can host Claude Code, and it is not needed.
+
+**Why does it come with a connector?** Cowork runs Claude's commands in a
+Linux machine of its own on your computer, with no screen to show you the
+sign-in window and no route to ACQ AI. The connector runs the same commands on
+your computer itself, where your browser and your login are. Claude Code uses
+the connector too, so both apps run one path.
 
 **Do I need to know what a repo is?** No. Point it at a folder of docs, or at
 one doc, or at nothing.
@@ -168,8 +191,8 @@ that `--new` starts a fresh conversation there, and which login goes back.
 
 ## Run it by hand (optional)
 
-The skill runs the bundled script for you. To run it yourself, from a checkout
-of this repo:
+The skill runs the bundled script for you, through the plugin's connector.
+To run it yourself, from a checkout of this repo:
 
 ```
 python3 plugins/acqai/scripts/acqai.py setup --company "Your Company"
@@ -181,6 +204,7 @@ python3 plugins/acqai/scripts/acqai.py send --file question.md -y
 python3 plugins/acqai/scripts/acqai.py send "Go deeper on point two."
 python3 plugins/acqai/scripts/acqai.py send "Context first." --paste
 python3 plugins/acqai/scripts/acqai.py answers
+python3 plugins/acqai/scripts/acqai.py show 2026-09-23-2209
 python3 plugins/acqai/scripts/acqai.py send "And the pilot?" --continue 2026-09-23-2209 --why "The pilot is priced already."
 python3 plugins/acqai/scripts/acqai.py names add "Jane Doe"
 python3 plugins/acqai/scripts/acqai.py outcome 2026-09-23-2209 --answer "- Lead with the pilot." --adopt "Lead with the pilot."
@@ -194,8 +218,8 @@ runs nothing. `send` asks y/N before it sends. `-y` answers it. `--dry-run` show
 go out and sends nothing, and it exits 1 when a line says NOT ready. `--new`
 starts a fresh conversation, and `--continue` goes back to the one an answer on
 file used. `--why` keeps a follow-up's reason above it in that file. `--paste`
-takes the question from the clipboard, after an optional note. `names` lists
-the private names. `outcome` reads or records the top of an answer's file, the
+takes the question from the clipboard, after an optional note. `show` prints
+one answer's whole file. `names` lists the private names. `outcome` reads or records the top of an answer's file, the
 best answer and what came of it (adopt, suggest, later, or drop), and
 `answers --regroup` merges the one-file-per-send answers of earlier versions
 into one file per chat.
