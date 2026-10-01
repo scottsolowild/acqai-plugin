@@ -360,6 +360,37 @@ class Answers(CliCase):
         self.assertIn("chat 18711427… with no app on record", out)
 
 
+class Show(CliCase):
+    def test_prints_the_whole_file_named_by_a_prefix(self):
+        self.answer(answer="Lead with the bridge.")
+        r = self.run_cli("show", ANSWER[:15])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, answer_body(answer="Lead with the bridge.").rstrip() + "\n")
+
+    def test_no_single_match_or_no_name_stops(self):
+        self.answer()
+        self.answer(name="2026-09-23-230000-other.md")
+        r = self.run_cli("show", "2026-09-23")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no single answer on file matches", r.stderr)
+        r = self.run_cli("show")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("show takes one answer", r.stderr)
+
+
+class CommandName(CliCase):
+    def test_messages_name_the_command_acqai_cmd_gives(self):
+        """The MCP server sets ACQAI_CMD, so a message names the tool to call
+        rather than a path to type."""
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.state),
+               "ACQAI_STATE_DIR": str(self.state), "ACQAI_CMD": "acqai"}
+        r = subprocess.run([sys.executable, str(SCRIPT), "names"], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True,
+                           text=True, timeout=60)
+        self.assertIn('Add one: acqai names add "Jane Doe"', r.stdout)
+        self.assertIn("Add one: python3 ", self.run_cli("names").stdout)
+
+
 class CutShort(CliCase):
     """Part of a reply, then an error: the send fails, and the part that
     came joins the conversation's file, marked where it stopped."""

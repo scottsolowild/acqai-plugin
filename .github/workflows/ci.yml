@@ -25,7 +25,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: The scripts compile
-        run: python3 -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py
+        run: python3 -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py plugins/acqai/scripts/acqai_mcp.py
       # tests/ holds the transport pair's tests and the script's own. Standard
       # library only, like the rest of this job: the page is a fake and the
       # transport is never reached.
@@ -120,7 +120,7 @@ jobs:
           grep -q "no Mozi endpoint learned yet" <<<"$out"
       - name: Manifests parse as JSON
         run: |
-          for f in .claude-plugin/marketplace.json plugins/acqai/.claude-plugin/plugin.json; do
+          for f in .claude-plugin/marketplace.json plugins/acqai/.claude-plugin/plugin.json plugins/acqai/.mcp.json; do
             python3 -m json.tool "$f" > /dev/null || { echo "$f does not parse as JSON" >&2; exit 1; }
           done
       - name: Claude marketplace validates

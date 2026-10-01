@@ -40,6 +40,8 @@ own docs as the context, one paced question at a time, each one on your yes.
                                       (- for stdin), when login did not catch it
   acqai.py answers [N]                the last N conversations on file (default
                                       10), each with its chat and what came of it
+  acqai.py show ANSWER                one answer's whole file (its name, a prefix
+                                      of it, or its path)
   acqai.py answers --regroup          merge the one-file-per-send answers of
                                       earlier versions into one file per chat
                                       (--dry-run says what it would merge)
@@ -76,7 +78,10 @@ ANSWERS = STATE_DIR / "answers"
 # One name per line, the ones a send will not carry out: clients, family,
 # anyone the member keeps private. Blank lines and # comments are skipped.
 NAMES_FILE = STATE_DIR / "private-names.txt"
-SELF = "python3 " + shlex.quote(str(SCRIPT))
+# How messages name this script. The plugin's MCP server sets ACQAI_CMD to
+# "acqai", since a member there calls a tool rather than typing a path.
+SELF = (os.environ.get("ACQAI_CMD", "").strip()
+        or "python3 " + shlex.quote(str(SCRIPT)))
 
 # The transport pair reads these when it is imported, so they go first.
 os.environ["ACQAI_STATE_DIR"] = str(STATE_DIR)
@@ -1003,6 +1008,17 @@ def cmd_answers(rest: list) -> int:
     return 0
 
 
+def cmd_show(rest: list) -> int:
+    """Print one answer's whole file, named the way outcome and --continue
+    name it. The plugin's MCP server reads a file through this, since in
+    Cowork the answers sit on the computer and Claude reads from a VM."""
+    if len(rest) != 1:
+        _say(f"show takes one answer: show ANSWER ({SELF} answers lists them)")
+        return 2
+    print(_answer_file(rest[0]).read_text(encoding="utf-8").rstrip())
+    return 0
+
+
 def cmd_names(rest: list) -> int:
     """List the private names, or add and remove them. The file keeps any
     comment lines as they are, and a name already there is not added twice."""
@@ -1130,6 +1146,8 @@ def main(argv: list) -> int:
             return cmd_discover(rest)
         if mode == "answers":
             return cmd_answers(rest)
+        if mode == "show":
+            return cmd_show(rest)
         if mode == "names":
             return cmd_names(rest)
         if mode == "outcome":
