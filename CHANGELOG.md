@@ -20,6 +20,12 @@ submit ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins
 after approval their CI bumps the pin when this repo moves. `./release.sh`
 shows what the next release would be.
 
+## [0.9.0] - 2026-10-01
+
+### Added
+- Ask ACQ AI from Cowork, through a connector on your computer (de934f4)
+  Cowork runs Claude's commands in a Linux machine of its own on your computer, with no screen for the sign-in window and no route to ACQ AI, so /acq stopped at its first step there. The plugin now ships a connector that runs the same commands on your computer itself, where your browser and your login are. Add the marketplace under Customize, Plugins, and run /acqai:acq. Claude Code uses the connector too, so both apps run one path.
+
 ## [0.8.1] - 2026-09-26
 
 ### Fixed
