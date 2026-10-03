@@ -98,4 +98,4 @@ Stop and say why, with the fix the script named: `login` for a profile that is n
 - Nothing sends without a yes. On `/acq <task>`, that is one yes in chat per send, and file edits wait for another yes. On `/acq -y <task>`, the `-y` on the command is the yes for the run: the sends, the Adopt file edits, and the outcome record. Do not ask again in chat. `yes: true` on each `send` carries that consent to the script.
 - One question at a time on the wire. The script paces itself, and one job runs at a time. A step-by-step run is a series of chat yeses; a `-y` run is the flag as yes, a short chain, and the files written before the run ends.
 - The script reaches ACQ AI's chat and nothing else. It never posts to the community.
-- The person's account is theirs. The tool does what they would do by hand, in their own browser, for their own use.
+- The person signs in to their own account. The tool does what they would do by hand, in their own browser, for their own use.
