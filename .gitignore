@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+
+# Claude Code's per-machine settings. "Yes, and don't ask again" saves each
+# approved command here, along with any key typed into it.
+.claude/settings.local.json
