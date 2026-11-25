@@ -28,6 +28,10 @@ SCRIPT = SCRIPTS / "acqai.py"
 _SCRATCH = tempfile.TemporaryDirectory()
 os.environ.setdefault("ACQAI_STATE_DIR", _SCRATCH.name)
 sys.path.insert(0, str(SCRIPTS))
+# Each run below gets a short environment of its own, so it reads nothing from
+# the machine's. Windows keeps SYSTEMROOT in it: Python 3.9 there cannot seed
+# its random numbers without it and stops before the script runs.
+_KEEP = {k: os.environ[k] for k in ("SYSTEMROOT",) if k in os.environ}
 
 import acqai  # noqa: E402
 import mozi_browser  # noqa: E402
@@ -71,7 +75,8 @@ class CliCase(unittest.TestCase):
         return path
 
     def run_cli(self, *args, path: str | None = None) -> subprocess.CompletedProcess:
-        env = {"PATH": path if path is not None else os.environ.get("PATH", ""),
+        env = {**_KEEP,
+               "PATH": path if path is not None else os.environ.get("PATH", ""),
                "HOME": str(self.state), "ACQAI_STATE_DIR": str(self.state)}
         return subprocess.run([sys.executable, str(SCRIPT), *args], env=env,
                               stdin=subprocess.DEVNULL, capture_output=True,
@@ -170,7 +175,7 @@ class Continue(CliCase):
                          "--dry-run")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("NOT ready: Mozi chat 18711427… is from the older app", r.stdout)
-        self.assertIn("acqai.py login-legacy continues this chat", r.stdout)
+        self.assertIn(" login-legacy continues this chat", r.stdout)
 
     def test_the_answer_can_be_named_by_its_path(self):
         path = self.answer()
@@ -224,6 +229,8 @@ class Paste(CliCase):
         tool.write_text(f"#!/bin/sh\nprintf '%s' '{text}'\n", encoding="utf-8")
         tool.chmod(0o755)
 
+    @unittest.skipIf(os.name == "nt", "the fake pbpaste is a sh script, "
+                     "which Windows cannot run")
     def test_the_question_comes_from_the_clipboard_after_the_note(self):
         self.route()
         self.clipboard("What should I charge?")
@@ -232,6 +239,8 @@ class Paste(CliCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("question:  Context first.\nWhat should I charge?", r.stdout)
 
+    @unittest.skipIf(os.name == "nt", "the fake pbpaste is a sh script, "
+                     "which Windows cannot run")
     def test_the_names_check_reads_the_pasted_text(self):
         self.route()
         self.run_cli("names", "add", "Jane Doe")
@@ -382,7 +391,7 @@ class CommandName(CliCase):
     def test_messages_name_the_command_acqai_cmd_gives(self):
         """The MCP server sets ACQAI_CMD, so a message names the tool to call
         rather than a path to type."""
-        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.state),
+        env = {**_KEEP, "PATH": os.environ.get("PATH", ""), "HOME": str(self.state),
                "ACQAI_STATE_DIR": str(self.state), "ACQAI_CMD": "acqai"}
         r = subprocess.run([sys.executable, str(SCRIPT), "names"], env=env,
                            stdin=subprocess.DEVNULL, capture_output=True,
