@@ -176,6 +176,74 @@ jobs:
           print(f"tag {tag} matches plugin.json {version}.")
           PY
 
+  # A member on Windows runs the connector with the Python they installed,
+  # so this job runs the scripts and the tests there, at the oldest Python the
+  # plugin asks for and at the one the Microsoft Store offers. tests/ starts
+  # the connector over stdio as the app does, so the unit tests cover the
+  # handshake, the tools, and the jobs. The steps after them are the Linux
+  # job's command checks, with the venv's Windows layout (Scripts\python.exe).
+  # setup-python puts python on PATH there, not python3, so each step calls
+  # python.
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: The scripts compile
+        run: python -m py_compile plugins/acqai/scripts/acqai.py plugins/acqai/scripts/mozilib.py plugins/acqai/scripts/mozi_browser.py plugins/acqai/scripts/acqai_mcp.py
+      - name: Unit tests
+        run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai-tests" PYTHONPATH=plugins/acqai/scripts python -m unittest discover -s tests -p "test_*.py"
+      - name: acqai.py --help exits 0
+        run: python plugins/acqai/scripts/acqai.py --help
+      - name: A dry run sends nothing and needs no yes
+        run: ACQAI_STATE_DIR="$RUNNER_TEMP/acqai" python plugins/acqai/scripts/acqai.py send "hello" --dry-run | grep -q "nothing sent"
+      - name: A ready dry run names the login and runs nothing
+        run: |
+          state="$RUNNER_TEMP/acqai-ready"
+          set +e
+          out=$(ACQAI_STATE_DIR="$state" python plugins/acqai/scripts/acqai.py ready --dry-run 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          test "$code" -eq 1
+          grep -q "login: no login saved yet" <<<"$out"
+          python -c "import os, sys; sys.exit(os.path.exists(sys.argv[1]))" "$state/venv"
+      # Windows has no /dev/tty, so the send has no terminal to ask at.
+      - name: A send with no yes and no terminal stops before the transport
+        run: |
+          set +e
+          ACQAI_STATE_DIR="$RUNNER_TEMP/acqai" python plugins/acqai/scripts/acqai.py send "hello" </dev/null
+          code=$?
+          set -e
+          test "$code" -eq 3
+      - name: A browser command hands off to the venv setup made
+        run: |
+          state="$RUNNER_TEMP/acqai-venv"
+          python -m venv --without-pip "$state/venv"
+          site=$("$state/venv/Scripts/python.exe" -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+          mkdir -p "$site/playwright"
+          touch "$site/playwright/__init__.py"
+          ACQAI_STATE_DIR="$state" python plugins/acqai/scripts/acqai.py probe --session | grep -q "^playwright: installed here"
+      - name: send --file - carries the question across the venv hop
+        run: |
+          state="$RUNNER_TEMP/acqai-venv"
+          set +e
+          out=$(printf 'hello from stdin' | ACQAI_STATE_DIR="$state" python plugins/acqai/scripts/acqai.py send --file - -y 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$out"
+          test "$code" -eq 1
+          grep -q "no Mozi endpoint learned yet" <<<"$out"
+
   # After each push to main: read the commits since the last release, stamp
   # the version they call for into plugin.json and CHANGELOG.md, tag
   # acqai--vX.Y.Z (Claude) and vX.Y.Z, push, and open a GitHub Release. That is
